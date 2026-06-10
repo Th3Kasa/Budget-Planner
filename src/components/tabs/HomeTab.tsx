@@ -1,0 +1,846 @@
+import React, { useState } from "react";
+import {
+  Briefcase,
+  CircleDollarSign,
+  Edit2,
+  Lock,
+  Plus,
+  Receipt,
+  Sparkles,
+  Trash2,
+  TrendingUp,
+  Wallet,
+  X,
+} from "lucide-react";
+import {
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  Legend,
+} from "recharts";
+import { cn } from "../../lib/utils";
+import { calculateIncomeAmount, IncomeSummary } from "../../lib/income";
+import { BudgetElement, BudgetState, IncomeStream, SavingsGoal } from "../../types";
+import { getIcon } from "../icons";
+import { ItemType } from "../AddItemModal";
+
+const money = (v: number) =>
+  v.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+interface HomeTabProps {
+  state: BudgetState;
+  summary: IncomeSummary;
+  totalExpenses: number;
+  totalDebts: number;
+  totalSavingsCont: number;
+  totalOutgoings: number;
+  weeklySurplus: number;
+  onUpdateIncome: (id: string, patch: Partial<IncomeStream>) => void;
+  onOpenAdd: (type: ItemType) => void;
+  onEdit: (type: ItemType, item: BudgetElement | SavingsGoal | IncomeStream) => void;
+  onRemoveIncome: (id: string) => void;
+  onRemoveItem: (collection: "expenses" | "debts" | "savings", id: string) => void;
+  onPayDebt: (id: string) => void;
+  onAutoAllocate: () => void;
+  onRecordWindfall: (name: string, amount: number) => void;
+  onAdjustVault: (newBalance: number) => void;
+  onUndoWindfall: (id: string) => void;
+}
+
+export default function HomeTab({
+  state,
+  summary,
+  totalExpenses,
+  totalDebts,
+  totalSavingsCont,
+  totalOutgoings,
+  weeklySurplus,
+  onUpdateIncome,
+  onOpenAdd,
+  onEdit,
+  onRemoveIncome,
+  onRemoveItem,
+  onPayDebt,
+  onAutoAllocate,
+  onRecordWindfall,
+  onAdjustVault,
+  onUndoWindfall,
+}: HomeTabProps) {
+  const [isSellingAsset, setIsSellingAsset] = useState(false);
+  const [isAdjustingVault, setIsAdjustingVault] = useState(false);
+  const [adjustVaultAmount, setAdjustVaultAmount] = useState("");
+  const [assetName, setAssetName] = useState("");
+  const [assetAmount, setAssetAmount] = useState("");
+
+  const centrelinkEnabled = state.centrelinkEnabled !== false;
+  const cashBalance = state.cashBalance || 0;
+
+  const chartData = [
+    { name: "Expenses", value: totalExpenses, color: "#f59e0b" },
+    { name: "Debts", value: totalDebts, color: "#ef4444" },
+    { name: "Savings", value: totalSavingsCont, color: "#3b82f6" },
+  ].filter((item) => item.value > 0);
+  if (weeklySurplus > 0) {
+    chartData.push({ name: "Surplus", value: weeklySurplus, color: "#10b981" });
+  }
+
+  // Longest payoff horizon across debts with an active repayment.
+  const debtFreeWeeks = state.debts.reduce((max, d) => {
+    if (d.amount > 0 && (d.totalBalance || 0) > 0) {
+      return Math.max(max, Math.ceil((d.totalBalance || 0) / d.amount));
+    }
+    return max;
+  }, 0);
+
+  const handleSellAsset = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amount = Number(assetAmount);
+    if (!assetName || !amount || amount <= 0) return;
+    onRecordWindfall(assetName, amount);
+    setIsSellingAsset(false);
+    setAssetName("");
+    setAssetAmount("");
+  };
+
+  const handleAdjustVault = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adjustVaultAmount === "") return;
+    onAdjustVault(Math.max(0, Number(adjustVaultAmount)));
+    setIsAdjustingVault(false);
+    setAdjustVaultAmount("");
+  };
+
+  const inlineNumberInput = (
+    value: number,
+    onChange: (v: number) => void,
+    width = "w-12",
+  ) => (
+    <input
+      type="number"
+      min="0"
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className={`text-xs font-bold bg-transparent border-b border-transparent hover:border-indigo-200 focus:border-indigo-500 outline-none ${width} text-right transition-colors`}
+    />
+  );
+
+  return (
+    <div className="space-y-8">
+      {/* Top Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6">
+        {/* Income Streams */}
+        <div className="glass-card p-5 md:p-6 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 bg-indigo-500/10 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+          <div className="flex justify-between items-start mb-2">
+            <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 relative z-10">
+              <Briefcase className="w-5 h-5" />
+            </div>
+            <button
+              onClick={() => onOpenAdd("income")}
+              className="z-10 p-1.5 bg-white/50 text-indigo-600 hover:bg-white rounded-lg transition-colors border border-indigo-100"
+              aria-label="Add income stream"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+          <h3 className="text-sm font-medium text-gray-500 relative z-10 mb-2">
+            Income Streams
+          </h3>
+          <div className="space-y-3 relative z-10 max-h-[160px] overflow-y-auto custom-scrollbar pr-1">
+            {state.incomes.map((inc) => (
+              <div
+                key={inc.id}
+                className="bg-white/40 p-2 rounded-lg border border-white/60 relative group/inc"
+              >
+                <div className="absolute right-1 top-1 opacity-0 group-hover/inc:opacity-100 flex items-center gap-2 transition-opacity">
+                  <button
+                    onClick={() => onEdit("income", inc)}
+                    className="text-gray-400 hover:text-indigo-600 transition-colors"
+                    aria-label="Edit income"
+                  >
+                    <Edit2 className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => onRemoveIncome(inc.id)}
+                    className="text-red-400 hover:text-red-600 transition-colors"
+                    aria-label="Delete income"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+                <p className="text-xs font-semibold text-gray-700 pr-5 flex items-center gap-1.5">
+                  {inc.name}
+                  {inc.isCash && (
+                    <span className="bg-emerald-100 text-emerald-700 text-[9px] px-1.5 py-0.5 rounded-sm font-bold uppercase tracking-wide">
+                      Cash
+                    </span>
+                  )}
+                </p>
+                {inc.type === "casual" ? (
+                  <div className="mt-1 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-gray-500">Rate:</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-bold text-gray-400">$</span>
+                        {inlineNumberInput(inc.hourlyRate || 0, (v) =>
+                          onUpdateIncome(inc.id, { hourlyRate: v }),
+                        )}
+                      </div>
+                    </div>
+                    {inc.useShifts ? (
+                      <div className="flex items-center justify-between mt-1 pt-1 border-t border-gray-100/50">
+                        <span className="text-[10px] text-gray-500">Shifts:</span>
+                        <span className="text-xs font-bold text-gray-900">
+                          {inc.shifts?.filter((s) => (s.hours || 0) > 0).length || 0}{" "}
+                          days
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-gray-500">Hours:</span>
+                        {inlineNumberInput(inc.hoursWorked || 0, (v) =>
+                          onUpdateIncome(inc.id, { hoursWorked: v }),
+                        )}
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between mt-1 pt-1 border-t border-gray-100/50">
+                      <span className="text-[10px] text-gray-500">Total:</span>
+                      <span className="text-xs font-bold text-gray-900">
+                        ${calculateIncomeAmount(inc).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-1 flex items-center justify-between">
+                    <span className="text-[10px] text-gray-500">Amount:</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs font-bold text-gray-400">$</span>
+                      {inlineNumberInput(
+                        inc.amount || 0,
+                        (v) => onUpdateIncome(inc.id, { amount: v }),
+                        "w-16",
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 pt-3 border-t border-gray-100/50 relative z-10 flex justify-between items-end">
+            <span className="text-xs text-gray-500 font-medium">Gross Total:</span>
+            <span className="text-xl font-bold text-gray-900">
+              ${summary.weeklyGrossIncome.toFixed(2)}
+            </span>
+          </div>
+          <div className="text-[10px] md:text-xs text-indigo-600 font-medium mt-3 bg-indigo-50 px-2 py-1 rounded w-fit inline-flex items-center gap-1 relative z-10">
+            <Wallet className="w-3 h-3" />
+            Super (12%): ${summary.superContribution.toFixed(2)}
+          </div>
+        </div>
+
+        {/* Net Income */}
+        <div className="glass-card p-5 md:p-6 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 bg-pink-500/10 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+          <div className="flex justify-between items-start mb-4">
+            <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center text-pink-600 relative z-10">
+              <Receipt className="w-5 h-5" />
+            </div>
+          </div>
+          <h3 className="text-sm font-medium text-gray-500 relative z-10 flex items-center justify-between">
+            Total Net Income
+            <span className="text-[9px] font-bold uppercase tracking-wider bg-pink-50 text-pink-600 px-1.5 py-0.5 rounded">
+              FY {summary.financialYear}
+            </span>
+          </h3>
+          <div className="mt-1 relative z-10">
+            <span className="text-2xl md:text-3xl font-bold text-gray-900">
+              ${summary.totalNetIncome.toFixed(2)}
+            </span>
+          </div>
+          <div className="text-[10px] md:text-xs text-gray-500 mt-2 space-y-1 relative z-10">
+            <p className="flex justify-between">
+              <span>Tax, Medicare, HECS:</span>{" "}
+              <span className="text-pink-600 font-medium">
+                -${summary.totalDeductions.toFixed(2)}
+              </span>
+            </p>
+            {centrelinkEnabled && (
+              <div className="flex flex-col">
+                <p className="flex justify-between">
+                  <span>Centrelink (F/N):</span>{" "}
+                  <span className="text-green-600 font-medium">
+                    +${(summary.centrelinkWeekly * 2).toFixed(2)}
+                  </span>
+                </p>
+                <p className="text-right text-[9px] text-gray-400 mt-0.5">
+                  Adds +${summary.centrelinkWeekly.toFixed(2)} to weekly budget
+                </p>
+              </div>
+            )}
+            {summary.untaxedWeeklyIncome > 0 && (
+              <p className="flex justify-between border-t border-gray-100/50 pt-1 mt-1">
+                <span>Cash (Untaxed):</span>{" "}
+                <span className="text-indigo-600 font-medium">
+                  +${summary.untaxedWeeklyIncome.toFixed(2)}
+                </span>
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Outgoings */}
+        <div className="glass-card p-5 md:p-6 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 bg-amber-500/10 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110"></div>
+          <div className="flex justify-between items-start mb-4">
+            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 relative z-10">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+          </div>
+          <h3 className="text-sm font-medium text-gray-500 relative z-10">
+            Total Outgoings
+          </h3>
+          <div className="mt-1 relative z-10">
+            <span className="text-2xl md:text-3xl font-bold text-gray-900">
+              ${totalOutgoings.toFixed(2)}
+            </span>
+          </div>
+          <div className="text-[10px] md:text-xs text-gray-500 mt-2 space-y-1 relative z-10">
+            <p className="flex justify-between">
+              <span>Expenses:</span>{" "}
+              <span className="font-medium">${totalExpenses.toFixed(2)}</span>
+            </p>
+            <p className="flex justify-between">
+              <span>Debt/Savings:</span>{" "}
+              <span className="font-medium">
+                ${(totalDebts + totalSavingsCont).toFixed(2)}
+              </span>
+            </p>
+          </div>
+        </div>
+
+        {/* Surplus / Deficit */}
+        <div
+          className={cn(
+            "glass-card p-5 md:p-6 relative overflow-hidden group border",
+            weeklySurplus >= 0 ? "border-green-200/50" : "border-red-200/50",
+          )}
+        >
+          <div
+            className={cn(
+              "absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-110",
+              weeklySurplus >= 0 ? "bg-green-500/10" : "bg-red-500/10",
+            )}
+          ></div>
+          <div className="flex justify-between items-start mb-4">
+            <div
+              className={cn(
+                "w-10 h-10 rounded-full flex items-center justify-center relative z-10",
+                weeklySurplus >= 0
+                  ? "bg-green-100 text-green-600"
+                  : "bg-red-100 text-red-600",
+              )}
+            >
+              {weeklySurplus >= 0 ? (
+                <CircleDollarSign className="w-5 h-5 flex-shrink-0" />
+              ) : (
+                <TrendingUp className="w-5 h-5 flex-shrink-0 rotate-180" />
+              )}
+            </div>
+          </div>
+          <h3 className="text-sm font-medium text-gray-500 relative z-10">
+            {weeklySurplus >= 0 ? "Weekly Surplus" : "Weekly Deficit"}
+          </h3>
+          <div className="mt-1 relative z-10">
+            <span
+              className={cn(
+                "text-2xl md:text-3xl font-bold",
+                weeklySurplus >= 0 ? "text-green-600" : "text-red-600",
+              )}
+            >
+              {weeklySurplus >= 0 ? "+" : ""}
+              {weeklySurplus.toFixed(2)}
+            </span>
+          </div>
+          <div className="text-[10px] md:text-xs text-gray-500 mt-3 font-medium relative z-10">
+            {weeklySurplus >= 0
+              ? "Safe to spend or save extra! 🎉"
+              : "Action needed: Adjust budget. ⚠️"}
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-3xl mx-auto w-full space-y-6">
+        {/* Expenses & Debts */}
+        <div className="glass-card p-4 md:p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-base md:text-lg font-bold text-gray-900">
+              Expenses & Debts
+            </h2>
+            <button
+              onClick={() => onOpenAdd("expense")}
+              className="flex items-center gap-1 text-xs md:text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors bg-indigo-50 px-2 py-1.5 md:px-3 rounded-lg"
+            >
+              <Plus className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0" /> Expense
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {state.expenses.length > 0 && (
+              <div className="space-y-3 md:space-y-4">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  Expenses
+                </h3>
+                {state.expenses.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between p-3 md:p-4 rounded-xl bg-white/40 border border-white/60 hover:bg-white/60 transition-colors group"
+                  >
+                    <div className="flex items-center gap-3 md:gap-4">
+                      <div
+                        className="w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center text-white shadow-sm flex-shrink-0"
+                        style={{ backgroundColor: item.color }}
+                      >
+                        {getIcon(item.icon || "")}
+                      </div>
+                      <div>
+                        <p className="text-sm md:text-base font-semibold text-gray-900 line-clamp-1">
+                          {item.name}
+                        </p>
+                        <p className="text-[10px] md:text-xs text-gray-500">
+                          {item.category}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 md:gap-4">
+                      <div className="text-right">
+                        <p className="text-sm md:text-base font-bold text-gray-900">
+                          ${item.amount.toFixed(2)}
+                        </p>
+                        <p className="text-[10px] md:text-xs text-gray-500">
+                          / week
+                        </p>
+                      </div>
+                      <div className="opacity-0 group-hover:opacity-100 flex items-center transition-opacity">
+                        <button
+                          onClick={() => onEdit("expense", item)}
+                          className="text-gray-400 hover:text-indigo-600 p-1 md:p-2 transition-colors"
+                          title="Edit item"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => onRemoveItem("expenses", item.id)}
+                          className="text-red-400 hover:text-red-600 p-1 md:p-2 transition-colors"
+                          title="Delete item"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {state.debts.length > 0 && (
+              <div className="space-y-3 md:space-y-4 mt-6">
+                <div className="flex justify-between items-center w-full mb-1">
+                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                    Debts
+                  </h3>
+                  <button
+                    onClick={() => onOpenAdd("debt")}
+                    className="flex items-center gap-1 text-xs md:text-sm text-red-600 font-medium hover:text-red-800 transition-colors bg-red-50 px-2 py-1.5 md:px-3 rounded-lg"
+                  >
+                    <Plus className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0" /> Debt
+                  </button>
+                </div>
+                <div className="flex justify-between items-center text-right mb-2">
+                  <span className="text-xs text-gray-500 font-medium">
+                    Total Debt Balance:{" "}
+                    <span className="text-sm font-bold text-red-600">
+                      $
+                      {money(
+                        state.debts.reduce(
+                          (acc, d) => acc + (d.totalBalance || 0),
+                          0,
+                        ),
+                      )}
+                    </span>
+                  </span>
+                  {debtFreeWeeks > 0 && (
+                    <span className="text-[10px] md:text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-lg">
+                      Debt-free in ~{debtFreeWeeks} weeks at current rate
+                    </span>
+                  )}
+                </div>
+                {state.debts.map((item) => {
+                  const original =
+                    item.originalBalance || item.totalBalance || item.amount;
+                  const current = item.totalBalance || 0;
+                  const paid = original - current;
+                  const progress =
+                    original > 0
+                      ? Math.min(100, Math.max(0, (paid / original) * 100))
+                      : 0;
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex flex-col p-4 md:p-5 rounded-2xl bg-white/40 border border-white/60 hover:bg-white/60 transition-colors group relative"
+                    >
+                      <div className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 flex items-center gap-2 transition-opacity">
+                        <button
+                          onClick={() => onEdit("debt", item)}
+                          className="text-gray-400 hover:text-indigo-600 transition-colors"
+                          title="Edit item"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => onRemoveItem("debts", item.id)}
+                          className="text-red-400 hover:text-red-600 transition-colors"
+                          title="Delete item"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-10 h-10 rounded-full flex items-center justify-center text-white shadow-sm flex-shrink-0"
+                            style={{ backgroundColor: item.color }}
+                          >
+                            {getIcon(item.icon || "credit-card")}
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-gray-900 line-clamp-1">
+                              {item.name}
+                            </h3>
+                            <p className="text-xs text-gray-500 flex items-center gap-1">
+                              {item.isLocked && (
+                                <Lock className="w-3 h-3 text-indigo-500" />
+                              )}
+                              ${item.amount.toFixed(2)}/wk repayment
+                              {item.amount > 0 && current > 0 && (
+                                <span>
+                                  {" "}
+                                  • {Math.ceil(current / item.amount)} weeks left
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2 mt-1 mr-6">
+                          <div className="text-right">
+                            <span className="text-sm font-bold text-gray-900 block">
+                              ${money(current)} left
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => onPayDebt(item.id)}
+                            className="text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-700 hover:bg-red-200 px-2 flex-shrink-0 py-1 rounded-md transition-colors flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" /> Pay
+                          </button>
+                        </div>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-2.5 mb-2 overflow-hidden shadow-inner">
+                        <div
+                          className="h-2.5 rounded-full transition-all duration-1000 ease-out"
+                          style={{
+                            width: `${progress}%`,
+                            backgroundColor: item.color || "#ef4444",
+                          }}
+                        ></div>
+                      </div>
+                      <div className="flex justify-between text-[11px] font-medium text-gray-500">
+                        <span>{progress.toFixed(0)}% paid</span>
+                        <span>${money(paid)} paid back</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {state.expenses.length === 0 && state.debts.length === 0 && (
+              <p className="text-gray-500 text-sm text-center py-4">
+                No expenses or debts added yet.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Cash Vault */}
+        <div className="glass-card mb-6 p-4 md:p-6 border border-emerald-100 bg-gradient-to-br from-emerald-50/50 to-teal-50/50 relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 opacity-10">
+            <CircleDollarSign className="w-24 h-24" />
+          </div>
+          <div className="flex justify-between items-start mb-6 relative">
+            <div>
+              <h2 className="text-base md:text-xl font-bold text-gray-900">
+                Cash Vault
+              </h2>
+              <p className="text-sm text-gray-600">
+                Proceeds from one-off sales or windfalls
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="text-2xl md:text-3xl font-bold text-emerald-600 drop-shadow-sm">
+                ${money(cashBalance)}
+              </div>
+            </div>
+          </div>
+
+          {!isSellingAsset && !isAdjustingVault ? (
+            <div className="flex gap-2 w-full">
+              <button
+                onClick={() => setIsSellingAsset(true)}
+                className="flex-1 relative flex items-center justify-center gap-2 bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300 transition-colors font-bold py-3 text-sm md:text-base rounded-xl shadow-sm"
+              >
+                <Plus className="w-4 h-4 md:w-5 md:h-5" /> Record Windfall
+              </button>
+              <button
+                onClick={() => {
+                  setIsAdjustingVault(true);
+                  setAdjustVaultAmount(String(cashBalance));
+                }}
+                className="px-4 relative flex items-center justify-center gap-2 bg-white text-gray-600 border border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300 transition-colors font-bold py-3 text-sm md:text-base rounded-xl shadow-sm"
+                title="Adjust balance manually"
+              >
+                <Edit2 className="w-4 h-4 md:w-5 md:h-5" />
+              </button>
+            </div>
+          ) : isAdjustingVault ? (
+            <form
+              onSubmit={handleAdjustVault}
+              className="bg-white p-5 rounded-2xl shadow-sm border border-emerald-100 space-y-4 relative mb-4"
+            >
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="font-bold text-gray-800">Adjust Vault Balance</h3>
+                <button
+                  type="button"
+                  onClick={() => setIsAdjustingVault(false)}
+                  className="text-gray-400 hover:text-gray-600 bg-gray-50 rounded-lg p-1 transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block uppercase tracking-wider">
+                  New Balance
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-2.5 text-gray-500 font-medium">
+                    $
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={adjustVaultAmount}
+                    onChange={(e) => setAdjustVaultAmount(e.target.value)}
+                    required
+                    className="w-full text-sm pl-8 pr-4 py-2.5 bg-gray-50 border outline-none focus:border-emerald-400 focus:bg-white border-gray-200 transition-colors rounded-xl"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-emerald-500 text-white font-bold py-3 shadow-md rounded-xl hover:bg-emerald-600 hover:shadow-lg transition-all mt-4 text-sm md:text-base"
+              >
+                Save Balance
+              </button>
+            </form>
+          ) : (
+            <form
+              onSubmit={handleSellAsset}
+              className="bg-white p-5 rounded-2xl shadow-sm border border-emerald-100 space-y-4 relative mb-4"
+            >
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="font-bold text-gray-800">Record Cash Inflow</h3>
+                <button
+                  type="button"
+                  onClick={() => setIsSellingAsset(false)}
+                  className="text-gray-400 hover:text-gray-600 bg-gray-50 rounded-lg p-1 transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mb-2">
+                This cash will be automatically allocated down your priority
+                list (Debts &rarr; Savings &rarr; Vault)
+              </p>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block uppercase tracking-wider">
+                  Item Name / Source
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Sold Car, Tax Return"
+                  value={assetName}
+                  onChange={(e) => setAssetName(e.target.value)}
+                  required
+                  className="w-full text-sm px-4 py-2.5 bg-gray-50 border outline-none focus:border-emerald-400 focus:bg-white border-gray-200 transition-colors rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block uppercase tracking-wider">
+                  Total Amount
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-2.5 text-gray-500 font-medium">
+                    $
+                  </span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={assetAmount}
+                    onChange={(e) => setAssetAmount(e.target.value)}
+                    required
+                    className="w-full text-sm pl-8 pr-4 py-2.5 bg-gray-50 border outline-none focus:border-emerald-400 focus:bg-white border-gray-200 transition-colors rounded-xl"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-emerald-500 text-white font-bold py-3 shadow-md rounded-xl hover:bg-emerald-600 hover:shadow-lg transition-all mt-4 text-sm md:text-base"
+              >
+                Add &amp; Auto-Allocate
+              </button>
+            </form>
+          )}
+
+          {state.windfalls && state.windfalls.length > 0 && (
+            <div className="mt-6 pt-4 border-t border-emerald-200/50">
+              <h3 className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-3">
+                Windfall History
+              </h3>
+              <div className="space-y-3">
+                {state.windfalls
+                  .slice()
+                  .reverse()
+                  .map((wf) => (
+                    <div
+                      key={wf.id}
+                      className="bg-white/80 border border-emerald-100 p-3 rounded-xl shadow-sm relative group"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="font-bold text-sm text-gray-800">
+                            {wf.name}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {new Date(wf.date).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-sm text-emerald-600">
+                            +${money(wf.sourceAmount)}
+                          </div>
+                          <button
+                            onClick={() => onUndoWindfall(wf.id)}
+                            className="text-[10px] text-gray-400 hover:text-red-500 font-medium underline mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            Undo Allocation
+                          </button>
+                        </div>
+                      </div>
+                      {wf.distributions && wf.distributions.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-gray-100/50 flex flex-wrap gap-1">
+                          {wf.distributions.map((d, idx) => (
+                            <span
+                              key={idx}
+                              className="text-[10px] bg-white border border-gray-200 px-1.5 py-0.5 rounded text-gray-600"
+                            >
+                              {d.name}: ${d.amount.toFixed(0)}
+                            </span>
+                          ))}
+                          {wf.unallocatedCash > 0.01 && (
+                            <span className="text-[10px] bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-emerald-700 font-medium">
+                              Vault: ${wf.unallocatedCash.toFixed(0)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Allocation Chart */}
+        <div className="glass-card p-4 md:p-6 flex flex-col h-[300px] md:h-[400px]">
+          <div className="flex items-center justify-between mb-2 md:mb-6">
+            <h2 className="text-base md:text-lg font-bold text-gray-900">
+              Allocation Analytics
+            </h2>
+            <button
+              onClick={onAutoAllocate}
+              className="flex items-center gap-1 text-xs md:text-sm text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg font-medium transition-colors"
+            >
+              <Sparkles className="w-4 h-4" />
+              Auto-Allocate
+            </button>
+          </div>
+          <div className="flex-1 min-h-0 relative -ml-4">
+            {chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <RechartsPieChart>
+                  <Pie
+                    data={chartData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={70}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value: number) => `$${value.toFixed(2)}`} />
+                  <Legend
+                    verticalAlign="bottom"
+                    height={36}
+                    wrapperStyle={{ fontSize: "12px" }}
+                  />
+                </RechartsPieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center -mt-8 ml-4">
+                <p className="text-gray-400 text-sm">Add data to see chart</p>
+              </div>
+            )}
+
+            {chartData.length > 0 && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none -mt-8 ml-4">
+                <div className="text-center">
+                  <span className="block text-[10px] md:text-xs text-gray-500 font-medium">
+                    Net Income
+                  </span>
+                  <span className="block text-lg md:text-xl font-bold text-gray-900">
+                    ${summary.totalNetIncome.toFixed(0)}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

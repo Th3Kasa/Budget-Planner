@@ -74,4 +74,6 @@ export interface BudgetState {
   cashBalance?: number;
   calendarEvents?: CalendarEvent[];
   windfalls?: Windfall[];
+  centrelinkEnabled?: boolean; // undefined = true (legacy states)
+  centrelinkMaxFortnightly?: number; // undefined = current JobSeeker single rate
 }
