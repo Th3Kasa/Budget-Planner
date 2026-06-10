@@ -469,12 +469,20 @@ export default function HomeTab({
             <h2 className="text-base md:text-lg font-bold text-gray-900">
               Expenses & Debts
             </h2>
-            <button
-              onClick={() => onOpenAdd("expense")}
-              className="flex items-center gap-1 text-xs md:text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors bg-indigo-50 px-2 py-1.5 md:px-3 rounded-lg"
-            >
-              <Plus className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0" /> Expense
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onOpenAdd("expense")}
+                className="flex items-center gap-1 text-xs md:text-sm text-indigo-600 font-medium hover:text-indigo-800 transition-colors bg-indigo-50 px-2 py-1.5 md:px-3 rounded-lg"
+              >
+                <Plus className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0" /> Expense
+              </button>
+              <button
+                onClick={() => onOpenAdd("debt")}
+                className="flex items-center gap-1 text-xs md:text-sm text-red-600 font-medium hover:text-red-800 transition-colors bg-red-50 px-2 py-1.5 md:px-3 rounded-lg"
+              >
+                <Plus className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0" /> Debt
+              </button>
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -560,17 +568,9 @@ export default function HomeTab({
 
             {state.debts.length > 0 && (
               <div className="space-y-3 md:space-y-4 mt-6">
-                <div className="flex justify-between items-center w-full mb-1">
-                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    Debts
-                  </h3>
-                  <button
-                    onClick={() => onOpenAdd("debt")}
-                    className="flex items-center gap-1 text-xs md:text-sm text-red-600 font-medium hover:text-red-800 transition-colors bg-red-50 px-2 py-1.5 md:px-3 rounded-lg"
-                  >
-                    <Plus className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0" /> Debt
-                  </button>
-                </div>
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+                  Debts
+                </h3>
                 <div className="flex justify-between items-center text-right mb-2">
                   <span className="text-xs text-gray-500 font-medium">
                     Total Debt Balance:{" "}
