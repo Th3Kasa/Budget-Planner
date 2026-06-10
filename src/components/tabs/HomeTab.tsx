@@ -66,7 +66,7 @@ interface HomeTabProps {
   onReorderDebts: (activeId: string, overId: string) => void;
   onUpdateDebtAmount: (id: string, amount: number) => void;
   onResetDebtAllocation: (id: string) => void;
-  onRecordWindfall: (name: string, amount: number) => void;
+  onRecordWindfall: (name: string, amount: number, priorities?: { debtId: string; amount: number }[]) => void;
   onAdjustVault: (newBalance: number) => void;
   onUndoWindfall: (id: string) => void;
 }
@@ -125,10 +125,12 @@ export default function HomeTab({
   onUndoWindfall,
 }: HomeTabProps) {
   const [isSellingAsset, setIsSellingAsset] = useState(false);
+  const [windfallStep, setWindfallStep] = useState<"enter" | "allocate">("enter");
   const [isAdjustingVault, setIsAdjustingVault] = useState(false);
   const [adjustVaultAmount, setAdjustVaultAmount] = useState("");
   const [assetName, setAssetName] = useState("");
   const [assetAmount, setAssetAmount] = useState("");
+  const [debtAllocations, setDebtAllocations] = useState<Record<string, string>>({});
   const [editingDebtId, setEditingDebtId] = useState<string | null>(null);
   const [editingDebtValue, setEditingDebtValue] = useState("");
 
@@ -149,23 +151,46 @@ export default function HomeTab({
     chartData.push({ name: "Surplus", value: weeklySurplus, color: "#10b981" });
   }
 
-  // Longest payoff horizon across debts with an active repayment.
-  const debtFreeWeeks = state.debts.reduce((max, d) => {
-    if (d.amount > 0 && (d.totalBalance || 0) > 0) {
-      return Math.max(max, Math.ceil((d.totalBalance || 0) / d.amount));
-    }
-    return max;
-  }, 0);
+  // Total balance across ALL debts divided by total weekly repayments gives
+  // the true debt-free horizon accounting for every debt simultaneously.
+  const totalDebtBalance = state.debts.reduce((acc, d) => acc + (d.totalBalance || 0), 0);
+  const totalWeeklyRepayments = state.debts.reduce((acc, d) => acc + d.amount, 0);
+  const debtFreeWeeks =
+    totalWeeklyRepayments > 0 && totalDebtBalance > 0
+      ? Math.ceil(totalDebtBalance / totalWeeklyRepayments)
+      : 0;
 
-  const handleSellAsset = (e: React.FormEvent) => {
+  const closeWindfall = () => {
+    setIsSellingAsset(false);
+    setWindfallStep("enter");
+    setAssetName("");
+    setAssetAmount("");
+    setDebtAllocations({});
+  };
+
+  const handleWindfallNext = (e: React.FormEvent) => {
     e.preventDefault();
     const amount = Number(assetAmount);
     if (!assetName || !amount || amount <= 0) return;
-    onRecordWindfall(assetName, amount);
-    setIsSellingAsset(false);
-    setAssetName("");
-    setAssetAmount("");
+    setWindfallStep("allocate");
+    setDebtAllocations({});
   };
+
+  const handleWindfallConfirm = () => {
+    const amount = Number(assetAmount);
+    if (!assetName || !amount || amount <= 0) return;
+    const priorities = Object.entries(debtAllocations)
+      .filter(([, v]) => v !== "" && Number(v) > 0)
+      .map(([debtId, v]) => ({ debtId, amount: Number(v) }));
+    onRecordWindfall(assetName, amount, priorities.length > 0 ? priorities : undefined);
+    closeWindfall();
+  };
+
+  const totalAllocated = Object.values(debtAllocations).reduce(
+    (sum, v) => sum + (Number(v) || 0),
+    0,
+  );
+  const remainingToAllocate = Math.max(0, Number(assetAmount) - totalAllocated);
 
   const handleAdjustVault = (e: React.FormEvent) => {
     e.preventDefault();
@@ -764,7 +789,7 @@ export default function HomeTab({
           {!isSellingAsset && !isAdjustingVault ? (
             <div className="flex gap-2 w-full">
               <button
-                onClick={() => setIsSellingAsset(true)}
+                onClick={() => { setIsSellingAsset(true); setWindfallStep("enter"); }}
                 className="flex-1 relative flex items-center justify-center gap-2 bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300 transition-colors font-bold py-3 text-sm md:text-base rounded-xl shadow-sm"
               >
                 <Plus className="w-4 h-4 md:w-5 md:h-5" /> Record Windfall
@@ -823,29 +848,26 @@ export default function HomeTab({
                 Save Balance
               </button>
             </form>
-          ) : (
+          ) : windfallStep === "enter" ? (
+            /* Step 1: Enter source and amount */
             <form
-              onSubmit={handleSellAsset}
+              onSubmit={handleWindfallNext}
               className="bg-white p-5 rounded-2xl shadow-sm border border-emerald-100 space-y-4 relative mb-4"
             >
               <div className="flex justify-between items-center mb-2">
                 <h3 className="font-bold text-gray-800">Record Cash Inflow</h3>
                 <button
                   type="button"
-                  onClick={() => setIsSellingAsset(false)}
+                  onClick={closeWindfall}
                   className="text-gray-400 hover:text-gray-600 bg-gray-50 rounded-lg p-1 transition-colors"
                   aria-label="Close"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mb-2">
-                This cash will be automatically allocated down your priority
-                list (Debts &rarr; Savings &rarr; Vault)
-              </p>
               <div>
                 <label className="text-xs font-semibold text-gray-500 mb-1 block uppercase tracking-wider">
-                  Item Name / Source
+                  Source / Item Name
                 </label>
                 <input
                   type="text"
@@ -867,7 +889,7 @@ export default function HomeTab({
                   <input
                     type="number"
                     step="0.01"
-                    min="0"
+                    min="0.01"
                     placeholder="0.00"
                     value={assetAmount}
                     onChange={(e) => setAssetAmount(e.target.value)}
@@ -878,11 +900,127 @@ export default function HomeTab({
               </div>
               <button
                 type="submit"
-                className="w-full bg-emerald-500 text-white font-bold py-3 shadow-md rounded-xl hover:bg-emerald-600 hover:shadow-lg transition-all mt-4 text-sm md:text-base"
+                className="w-full bg-emerald-500 text-white font-bold py-3 shadow-md rounded-xl hover:bg-emerald-600 hover:shadow-lg transition-all mt-4 text-sm md:text-base flex items-center justify-center gap-2"
               >
-                Add &amp; Auto-Allocate
+                Next: Choose Debt Priority →
               </button>
             </form>
+          ) : (
+            /* Step 2: Allocate to specific debts */
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-emerald-100 space-y-4 relative mb-4">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-gray-800">Allocate Windfall</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Total: <span className="font-semibold text-emerald-600">${money(Number(assetAmount))}</span>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeWindfall}
+                  className="text-gray-400 hover:text-gray-600 bg-gray-50 rounded-lg p-1 transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Remaining indicator */}
+              <div className={`rounded-xl p-3 text-center border ${remainingToAllocate < 0 ? "bg-red-50 border-red-200" : "bg-emerald-50 border-emerald-200"}`}>
+                <span className={`font-bold text-xl ${remainingToAllocate < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                  ${money(Math.abs(remainingToAllocate))}
+                </span>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {remainingToAllocate < 0
+                    ? "over-allocated — reduce amounts above"
+                    : "remaining → auto-splits to other debts, then savings, then vault"}
+                </p>
+              </div>
+
+              {/* Debt allocation inputs */}
+              {state.debts.filter((d) => (d.totalBalance || 0) > 0).length > 0 ? (
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Specify amounts for priority debts (optional)
+                  </p>
+                  {state.debts
+                    .filter((d) => (d.totalBalance || 0) > 0)
+                    .map((debt) => (
+                      <div
+                        key={debt.id}
+                        className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100"
+                      >
+                        <div
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-white flex-shrink-0"
+                          style={{ backgroundColor: debt.color }}
+                        >
+                          {getIcon(debt.icon || "credit-card")}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 truncate">
+                            {debt.name}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Balance: ${money(debt.totalBalance || 0)}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDebtAllocations((prev) => ({
+                              ...prev,
+                              [debt.id]: (debt.totalBalance || 0).toFixed(2),
+                            }))
+                          }
+                          className="text-[10px] font-bold uppercase tracking-wide text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 px-2 py-1 rounded-lg flex-shrink-0 transition-colors"
+                        >
+                          Pay all
+                        </button>
+                        <div className="relative flex-shrink-0">
+                          <span className="absolute left-2.5 top-2 text-gray-400 text-sm pointer-events-none">
+                            $
+                          </span>
+                          <input
+                            type="number"
+                            min="0"
+                            max={debt.totalBalance || 0}
+                            step="0.01"
+                            placeholder="0.00"
+                            value={debtAllocations[debt.id] || ""}
+                            onChange={(e) =>
+                              setDebtAllocations((prev) => ({
+                                ...prev,
+                                [debt.id]: e.target.value,
+                              }))
+                            }
+                            className="w-24 pl-6 pr-2 py-1.5 text-sm bg-white border border-gray-200 rounded-lg outline-none focus:border-emerald-400 text-right"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 text-center py-2">
+                  No active debts — windfall will go to savings goals then vault.
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={handleWindfallConfirm}
+                disabled={remainingToAllocate < 0}
+                className="w-full bg-emerald-500 text-white font-bold py-3 shadow-md rounded-xl hover:bg-emerald-600 hover:shadow-lg transition-all text-sm md:text-base disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Confirm Allocation
+              </button>
+              <button
+                type="button"
+                onClick={() => setWindfallStep("enter")}
+                className="w-full text-sm text-gray-500 hover:text-gray-700 py-1 transition-colors"
+              >
+                ← Back
+              </button>
+            </div>
           )}
 
           {state.windfalls && state.windfalls.length > 0 && (

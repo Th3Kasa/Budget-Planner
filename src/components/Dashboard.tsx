@@ -232,7 +232,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     };
     load();
 
-    const channel = supabase
+    let channel = supabase
       .channel("budgets-sync")
       .on(
         "postgres_changes",
@@ -252,7 +252,51 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       )
       .subscribe();
 
+    // On mobile, browsers suspend WebSockets when the tab goes to the
+    // background. Reconnect + pull fresh state when the user returns.
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      supabase.removeChannel(channel);
+      channel = supabase
+        .channel("budgets-sync-" + Date.now())
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "budgets",
+            filter: `user_id=eq.${userId}`,
+          },
+          (payload) => {
+            const incoming = (payload.new as { state?: BudgetState })?.state;
+            if (!incoming) return;
+            setState((prev) =>
+              JSON.stringify(prev) !== JSON.stringify(incoming) ? incoming : prev,
+            );
+          },
+        )
+        .subscribe();
+      // Also re-fetch latest cloud state to catch writes made on other devices.
+      supabase
+        .from("budgets")
+        .select("state")
+        .eq("user_id", userId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data?.state) {
+            setState((prev) =>
+              JSON.stringify(prev) !== JSON.stringify(data.state)
+                ? (data.state as BudgetState)
+                : prev,
+            );
+          }
+        });
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       supabase.removeChannel(channel);
     };
   }, [session]);
@@ -539,8 +583,12 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
   // ----- Vault / windfalls -----
 
-  const handleRecordWindfall = (name: string, amount: number) => {
-    setState((prev) => distributeWindfall(prev, name, amount));
+  const handleRecordWindfall = (
+    name: string,
+    amount: number,
+    debtPriorities?: { debtId: string; amount: number }[],
+  ) => {
+    setState((prev) => distributeWindfall(prev, name, amount, debtPriorities));
   };
 
   const handleUndoWindfall = (id: string) => {

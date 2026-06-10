@@ -117,13 +117,15 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
   return { ...prevState, debts, savings };
 }
 
-// Distributes a one-off cash windfall against actual balances: debts
-// proportionally by balance, then savings equally by remaining gap.
-// Whatever is left lands in the Cash Vault.
+// Distributes a one-off cash windfall against actual balances.
+// If debtPriorities is provided, those debts are paid first (up to each
+// specified amount), then the remainder is spread proportionally across
+// the other debts, then savings equally, then Cash Vault.
 export function distributeWindfall(
   prevState: BudgetState,
   name: string,
   amount: number,
+  debtPriorities?: { debtId: string; amount: number }[],
 ): BudgetState {
   const debts = prevState.debts.map((d) => ({ ...d }));
   const savings = prevState.savings.map((s) => ({ ...s }));
@@ -141,9 +143,28 @@ export function distributeWindfall(
     else distributions.push({ type, id, name: itemName, amount: amt });
   };
 
-  let pool = splitProportional(
-    debts,
-    amount,
+  let pool = amount;
+  const prioritizedIds = new Set<string>();
+
+  // 1. Apply explicit priority allocations first
+  if (debtPriorities && debtPriorities.length > 0) {
+    for (const p of debtPriorities) {
+      const debt = debts.find((d) => d.id === p.debtId);
+      if (!debt || (debt.totalBalance ?? 0) <= 0.001 || pool <= 0.001) continue;
+      const allocation = Math.min(p.amount, debt.totalBalance ?? 0, pool);
+      if (allocation > 0.001) {
+        debt.totalBalance = Math.max(0, (debt.totalBalance ?? 0) - allocation);
+        record("debt", debt.id, debt.name, allocation);
+        pool -= allocation;
+        prioritizedIds.add(p.debtId);
+      }
+    }
+  }
+
+  // 2. Remaining pool spreads proportionally across non-priority debts
+  pool = splitProportional(
+    debts.filter((d) => !prioritizedIds.has(d.id)),
+    pool,
     (d) => Math.max(0, d.totalBalance ?? 0),
     (d) => Math.max(0, d.totalBalance ?? 0),
     (d, amt) => {
@@ -152,6 +173,7 @@ export function distributeWindfall(
     },
   );
 
+  // 3. Whatever is left fills savings goals equally
   pool = fillSavingsEqually(
     savings,
     pool,
