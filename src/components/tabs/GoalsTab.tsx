@@ -17,6 +17,7 @@ interface GoalsTabProps {
   onAddGoal: () => void;
   onUpdateSavingsWeight: (id: string, weight: number) => void;
   onResetSavingsWeight: (id: string) => void;
+  onRecalculateSavings: () => void;
 }
 
 export default function GoalsTab({
@@ -28,6 +29,7 @@ export default function GoalsTab({
   onAddGoal,
   onUpdateSavingsWeight,
   onResetSavingsWeight,
+  onRecalculateSavings,
 }: GoalsTabProps) {
   const [allocatingGoalId, setAllocatingGoalId] = useState<string | null>(null);
   const [allocationAmount, setAllocationAmount] = useState("");
@@ -127,12 +129,21 @@ export default function GoalsTab({
               Monitor completion rates and allocate extra Cash Vault balance.
             </p>
           </div>
-          <button
-            onClick={onAddGoal}
-            className="flex items-center justify-center gap-1.5 text-sm bg-indigo-600 text-white font-semibold px-4 py-2.5 rounded-xl hover:bg-indigo-700 transition"
-          >
-            <Plus className="w-4 h-4 flex-shrink-0" /> Add Savings Goal
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onRecalculateSavings}
+              className="flex items-center justify-center gap-1.5 text-sm bg-white border border-gray-200 text-gray-600 font-semibold px-4 py-2.5 rounded-xl hover:bg-gray-50 hover:text-indigo-600 hover:border-indigo-200 transition"
+              title="Unlock all weekly contributions and rebalance based on current income"
+            >
+              <RotateCcw className="w-4 h-4 flex-shrink-0" /> Recalculate
+            </button>
+            <button
+              onClick={onAddGoal}
+              className="flex items-center justify-center gap-1.5 text-sm bg-indigo-600 text-white font-semibold px-4 py-2.5 rounded-xl hover:bg-indigo-700 transition"
+            >
+              <Plus className="w-4 h-4 flex-shrink-0" /> Add Savings Goal
+            </button>
+          </div>
         </div>
 
         {savings.length === 0 ? (
