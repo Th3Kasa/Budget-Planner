@@ -1,0 +1,8 @@
+{
+  "name": "Weekly Budget Planner",
+  "description": "Comprehensive weekly budget tool covering income, expenses, savings goals, tax calculations, and superannuation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

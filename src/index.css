@@ -1,0 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  
+  --color-neo-bg: #F3F4F9;
+  --color-glass-bg: rgba(255, 255, 255, 0.7);
+  --color-glass-border: rgba(255, 255, 255, 0.4);
+}
+
+body {
+  background-color: var(--color-neo-bg);
+  color: #1A1A24;
+}
+
+/* Glassmorphism utility classes */
+@layer utilities {
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-xl border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.04)] rounded-2xl;
+  }
+  .glass-card-hover {
+    @apply hover:bg-white/90 hover:shadow-[0_8px_32px_rgba(0,0,0,0.08)] transition-all duration-300;
+  }
+}
