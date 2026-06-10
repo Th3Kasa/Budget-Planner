@@ -861,8 +861,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           {activeTab === "goals" && (
             <GoalsTab
               savings={state.savings}
-              cashBalance={state.cashBalance || 0}
-              onAllocateFromVault={handleAllocateFromVault}
               onEditGoal={(goal) => openEditModal("savings", goal)}
               onRemoveGoal={(id) => removeItem("savings", id)}
               onAddGoal={() => openAddModal("savings")}
