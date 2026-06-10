@@ -38,6 +38,8 @@ import SettingsTab from "./tabs/SettingsTab";
 
 interface DashboardProps {
   firebaseUser?: User | null;
+  onGoogleLogin?: () => void;
+  onGoogleLogout?: () => void;
   onLogout?: () => void;
 }
 
@@ -161,7 +163,7 @@ const TAB_COPY = {
   },
 };
 
-export default function Dashboard({ firebaseUser, onLogout }: DashboardProps) {
+export default function Dashboard({ firebaseUser, onGoogleLogin, onGoogleLogout, onLogout }: DashboardProps) {
   const [state, setState] = useState<BudgetState>(loadInitialState);
   const [activeTab, setActiveTab] =
     useState<keyof typeof TAB_COPY>("home");
@@ -605,8 +607,11 @@ export default function Dashboard({ firebaseUser, onLogout }: DashboardProps) {
                 state.centrelinkMaxFortnightly ??
                 DEFAULT_JOBSEEKER_MAX_FORTNIGHTLY
               }
+              firebaseUser={firebaseUser ?? null}
               onToggleCentrelink={handleToggleCentrelink}
               onChangeCentrelinkMax={handleChangeCentrelinkMax}
+              onGoogleLogin={onGoogleLogin}
+              onGoogleLogout={onGoogleLogout}
               onExportCsv={() => downloadBudgetCsv(state)}
               onResetData={handleResetData}
             />
