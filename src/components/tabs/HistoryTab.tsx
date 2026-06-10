@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   format,
   parseISO,
@@ -13,10 +13,22 @@ import {
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
-  Edit2,
+  Plus,
   Trash2,
+  TrendingDown,
 } from "lucide-react";
-import { CalendarEvent } from "../../types";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
+import { Session } from "@supabase/supabase-js";
+import { supabase } from "../../lib/supabase";
+import { IncomeStream, ShiftLog, WeeklySnapshot } from "../../types";
 
 const WEEKS_PER_MONTH = 4.33;
 
@@ -32,9 +44,8 @@ interface HistoryTabProps {
   totalDebts: number;
   totalSavingsCont: number;
   weeklySurplus: number;
-  calendarEvents: CalendarEvent[];
-  onSaveEvent: (ev: CalendarEvent) => void;
-  onDeleteEvent: (id: string) => void;
+  incomes: IncomeStream[];
+  session: Session | null;
 }
 
 export default function HistoryTab({
@@ -43,72 +54,112 @@ export default function HistoryTab({
   totalDebts,
   totalSavingsCont,
   weeklySurplus,
-  calendarEvents,
-  onSaveEvent,
-  onDeleteEvent,
+  incomes,
+  session,
 }: HistoryTabProps) {
   const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState<string>(
+  const [selectedDate, setSelectedDate] = useState(
     format(new Date(), "yyyy-MM-dd"),
   );
-  const [calTitle, setCalTitle] = useState("");
-  const [calAmount, setCalAmount] = useState("");
-  const [calType, setCalType] = useState<"income" | "expense">("expense");
-  const [calIdToEdit, setCalIdToEdit] = useState<string | null>(null);
+  const [shiftLogs, setShiftLogs] = useState<ShiftLog[]>([]);
+  const [snapshots, setSnapshots] = useState<WeeklySnapshot[]>([]);
+
+  const casualIncomes = incomes.filter((i) => i.type === "casual");
+
+  const [showLogForm, setShowLogForm] = useState(false);
+  const [logStreamId, setLogStreamId] = useState(casualIncomes[0]?.id ?? "");
+  const [logHours, setLogHours] = useState("");
+  const [logRate, setLogRate] = useState("");
+  const [logNotes, setLogNotes] = useState("");
+  const [isSavingLog, setIsSavingLog] = useState(false);
 
   const monthlySurplus = weeklySurplus * WEEKS_PER_MONTH;
 
-  const resetForm = () => {
-    setCalIdToEdit(null);
-    setCalTitle("");
-    setCalAmount("");
-  };
+  // Pre-fill the hourly rate from the selected income stream.
+  useEffect(() => {
+    const stream = incomes.find((i) => i.id === logStreamId);
+    if (stream?.hourlyRate) setLogRate(String(stream.hourlyRate));
+  }, [logStreamId, incomes]);
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!calTitle || !calAmount) return;
-    onSaveEvent({
-      id: calIdToEdit || Date.now().toString(),
-      date: selectedDate,
-      title: calTitle,
-      amount: Number(calAmount),
-      type: calType,
+  // Load shift logs and weekly snapshots from Supabase.
+  useEffect(() => {
+    if (!session?.user) return;
+    const userId = session.user.id;
+    Promise.all([
+      supabase
+        .from("shift_logs")
+        .select("*")
+        .eq("user_id", userId)
+        .order("shift_date", { ascending: false }),
+      supabase
+        .from("weekly_snapshots")
+        .select("*")
+        .eq("user_id", userId)
+        .order("week_starting", { ascending: true }),
+    ]).then(([logsRes, snapsRes]) => {
+      if (logsRes.data) setShiftLogs(logsRes.data as ShiftLog[]);
+      if (snapsRes.data) setSnapshots(snapsRes.data as WeeklySnapshot[]);
     });
-    resetForm();
+  }, [session]);
+
+  const handleSaveShift = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user || !logHours || !logRate) return;
+    setIsSavingLog(true);
+
+    const stream = incomes.find((i) => i.id === logStreamId);
+    const { data, error } = await supabase
+      .from("shift_logs")
+      .insert({
+        user_id: session.user.id,
+        shift_date: selectedDate,
+        income_stream_id: logStreamId,
+        income_stream_name: stream?.name ?? "Shift",
+        hours: Number(logHours),
+        hourly_rate: Number(logRate),
+        notes: logNotes || null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Failed to save shift:", error.message);
+    } else if (data) {
+      setShiftLogs((prev) => [data as ShiftLog, ...prev]);
+      setLogHours("");
+      setLogNotes("");
+      setShowLogForm(false);
+    }
+    setIsSavingLog(false);
   };
 
-  const handleEdit = (ev: CalendarEvent) => {
-    setCalIdToEdit(ev.id);
-    setSelectedDate(ev.date);
-    setCalTitle(ev.title);
-    setCalAmount(String(ev.amount));
-    setCalType(ev.type);
+  const handleDeleteShift = async (id: string) => {
+    const { error } = await supabase.from("shift_logs").delete().eq("id", id);
+    if (!error) setShiftLogs((prev) => prev.filter((l) => l.id !== id));
   };
 
-  const metricRows: {
-    label: string;
-    weekly: number;
-    monthly?: number;
-    cls: string;
-  }[] = [
-    {
-      label: "Total Net Income",
-      weekly: totalNetIncome,
-      cls: "text-emerald-600",
-    },
+  const daysWithLogs = new Set(shiftLogs.map((l) => l.shift_date));
+  const selectedDayLogs = shiftLogs.filter(
+    (l) => l.shift_date === selectedDate,
+  );
+
+  const weekTotal = (log: ShiftLog) => Number(log.hours) * Number(log.hourly_rate);
+
+  const metricRows = [
+    { label: "Total Net Income", weekly: totalNetIncome, cls: "text-emerald-600" },
     { label: "Expenses", weekly: totalExpenses, cls: "text-amber-600" },
     { label: "Debt Repayments", weekly: totalDebts, cls: "text-rose-600" },
-    {
-      label: "Savings Contributions",
-      weekly: totalSavingsCont,
-      cls: "text-blue-600",
-    },
+    { label: "Savings Contributions", weekly: totalSavingsCont, cls: "text-blue-600" },
   ];
 
-  const selectedEvents = calendarEvents.filter((e) => e.date === selectedDate);
+  const chartData = snapshots.map((s) => ({
+    week: format(parseISO(s.week_starting), "d MMM"),
+    balance: Number(Number(s.total_debt_balance).toFixed(2)),
+  }));
 
   return (
     <div className="space-y-6">
+      {/* Financial Log */}
       <div className="glass-card p-4 md:p-6 border border-white/60">
         <h2 className="text-xl font-bold text-gray-900 mb-6">Financial Log</h2>
         <div className="overflow-x-auto">
@@ -118,59 +169,35 @@ export default function HistoryTab({
                 <th className="px-6 py-4 rounded-tl-lg font-bold">Metric</th>
                 <th className="px-6 py-4 font-bold text-right">Weekly</th>
                 <th className="px-6 py-4 font-bold text-right">Monthly</th>
-                <th className="px-6 py-4 rounded-tr-lg font-bold text-right">
-                  Yearly
-                </th>
+                <th className="px-6 py-4 rounded-tr-lg font-bold text-right">Yearly</th>
               </tr>
             </thead>
             <tbody>
               {metricRows.map((row) => (
-                <tr
-                  key={row.label}
-                  className="bg-white border-b border-gray-100 shadow-sm"
-                >
-                  <td className={`px-6 py-4 font-bold ${row.cls}`}>
-                    {row.label}
-                  </td>
-                  <td className={`px-6 py-4 text-right font-semibold ${row.cls}`}>
-                    ${money(row.weekly)}
-                  </td>
-                  <td className={`px-6 py-4 text-right font-semibold ${row.cls}`}>
-                    ${money(row.weekly * WEEKS_PER_MONTH)}
-                  </td>
-                  <td className={`px-6 py-4 text-right font-semibold ${row.cls}`}>
-                    ${money(row.weekly * 52)}
-                  </td>
+                <tr key={row.label} className="bg-white border-b border-gray-100 shadow-sm">
+                  <td className={`px-6 py-4 font-bold ${row.cls}`}>{row.label}</td>
+                  <td className={`px-6 py-4 text-right font-semibold ${row.cls}`}>${money(row.weekly)}</td>
+                  <td className={`px-6 py-4 text-right font-semibold ${row.cls}`}>${money(row.weekly * WEEKS_PER_MONTH)}</td>
+                  <td className={`px-6 py-4 text-right font-semibold ${row.cls}`}>${money(row.weekly * 52)}</td>
                 </tr>
               ))}
-              <tr className="bg-white font-bold bg-gray-50/50">
+              <tr className="font-bold bg-gray-50/50">
                 <td className="px-6 py-4 text-gray-900">Surplus / Deficit</td>
-                <td
-                  className={`px-6 py-4 text-right ${weeklySurplus >= 0 ? "text-emerald-700" : "text-rose-700"}`}
-                >
-                  ${money(weeklySurplus)}
-                </td>
-                <td
-                  className={`px-6 py-4 text-right ${monthlySurplus >= 0 ? "text-emerald-700" : "text-rose-700"}`}
-                >
-                  ${money(monthlySurplus)}
-                </td>
-                <td
-                  className={`px-6 py-4 text-right ${weeklySurplus >= 0 ? "text-emerald-700" : "text-rose-700"}`}
-                >
-                  ${money(weeklySurplus * 52)}
-                </td>
+                <td className={`px-6 py-4 text-right ${weeklySurplus >= 0 ? "text-emerald-700" : "text-rose-700"}`}>${money(weeklySurplus)}</td>
+                <td className={`px-6 py-4 text-right ${monthlySurplus >= 0 ? "text-emerald-700" : "text-rose-700"}`}>${money(monthlySurplus)}</td>
+                <td className={`px-6 py-4 text-right ${weeklySurplus >= 0 ? "text-emerald-700" : "text-rose-700"}`}>${money(weeklySurplus * 52)}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
 
+      {/* Shift Calendar */}
       <div className="glass-card p-4 md:p-6 border border-white/60">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <CalendarIcon className="w-5 h-5 text-indigo-600" />
-            Calendar View
+            Shift Calendar
           </h2>
           <div className="flex items-center gap-4">
             <button
@@ -195,173 +222,213 @@ export default function HistoryTab({
 
         <div className="grid grid-cols-7 gap-1 md:gap-2 mb-2">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-            <div
-              key={day}
-              className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider py-2"
-            >
+            <div key={day} className="text-center text-xs font-semibold text-gray-500 uppercase tracking-wider py-2">
               {day}
             </div>
           ))}
-          {Array.from({ length: getDay(startOfMonth(currentMonthDate)) }).map(
-            (_, i) => (
-              <div
-                key={"empty-" + i}
-                className="p-2 md:p-4 rounded-xl bg-gray-50/30 border border-transparent"
-              />
-            ),
-          )}
+          {Array.from({ length: getDay(startOfMonth(currentMonthDate)) }).map((_, i) => (
+            <div key={"empty-" + i} className="p-2 md:p-4 rounded-xl bg-gray-50/30 border border-transparent" />
+          ))}
           {eachDayOfInterval({
             start: startOfMonth(currentMonthDate),
             end: endOfMonth(currentMonthDate),
           }).map((date) => {
             const dateStr = format(date, "yyyy-MM-dd");
             const isCurrent = dateStr === selectedDate;
-            const dayEvents = calendarEvents.filter((e) => e.date === dateStr);
-
+            const hasLog = daysWithLogs.has(dateStr);
             return (
               <div
                 key={dateStr}
                 onClick={() => {
                   setSelectedDate(dateStr);
-                  resetForm();
+                  setShowLogForm(false);
                 }}
-                className={`p-1 md:p-2 rounded-xl border flex flex-col items-center justify-start min-h-[60px] md:min-h-[80px] transition-all cursor-pointer ${
+                className={`p-1 md:p-2 rounded-xl border flex flex-col items-center justify-start min-h-[52px] md:min-h-[70px] transition-all cursor-pointer ${
                   isCurrent
                     ? "bg-indigo-50 border-indigo-300 shadow-sm"
-                    : "bg-white/40 border-gray-200 hover:border-indigo-200 hover:bg-indigo-50/20 text-gray-700"
+                    : "bg-white/40 border-gray-200 hover:border-indigo-200 hover:bg-indigo-50/20"
                 }`}
               >
-                <span
-                  className={`text-sm font-medium ${isCurrent ? "text-indigo-700" : ""}`}
-                >
+                <span className={`text-sm font-medium ${isCurrent ? "text-indigo-700" : "text-gray-700"}`}>
                   {format(date, "d")}
                 </span>
-                <div className="flex flex-col w-full px-1 gap-0.5 mt-1">
-                  {dayEvents.map((e) => (
-                    <div
-                      key={e.id}
-                      className={`text-[9px] md:text-[10px] leading-tight truncate px-1 py-0.5 rounded flex items-center ${
-                        e.type === "income"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : "bg-rose-100 text-rose-800"
-                      }`}
-                    >
-                      {e.amount} {e.title}
-                    </div>
-                  ))}
-                </div>
+                {hasLog && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1" />}
               </div>
             );
           })}
         </div>
 
         <div className="mt-6 pt-6 border-t border-gray-100">
-          <h3 className="font-bold text-gray-800 mb-4 flex justify-between items-center">
-            <span>
-              Events for {format(parseISO(selectedDate), "MMMM do, yyyy")}
-            </span>
-            {calIdToEdit && (
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-gray-800">
+              {format(parseISO(selectedDate), "EEEE, MMMM do yyyy")}
+            </h3>
+            {casualIncomes.length > 0 && session?.user && (
               <button
-                onClick={resetForm}
-                className="text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded hover:bg-indigo-100 transition-colors"
+                onClick={() => setShowLogForm((v) => !v)}
+                className="flex items-center gap-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition"
               >
-                Cancel Edit
+                <Plus className="w-4 h-4" /> Log Shift
               </button>
             )}
-          </h3>
+          </div>
 
-          <div className="flex flex-col lg:flex-row gap-6">
-            <div className="flex-1 space-y-4">
-              <form
-                onSubmit={handleSave}
-                className="bg-white p-4 md:p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4 relative"
-              >
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setCalType("expense")}
-                    className={`flex-1 py-1.5 text-sm rounded-lg font-bold transition ${calType === "expense" ? "bg-rose-100 text-rose-700" : "text-gray-500 hover:bg-gray-50"}`}
+          {showLogForm && (
+            <form
+              onSubmit={handleSaveShift}
+              className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm space-y-3 mb-4"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                    Income Stream
+                  </label>
+                  <select
+                    value={logStreamId}
+                    onChange={(e) => setLogStreamId(e.target.value)}
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-400 outline-none bg-white"
                   >
-                    Expense
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCalType("income")}
-                    className={`flex-1 py-1.5 text-sm rounded-lg font-bold transition ${calType === "income" ? "bg-emerald-100 text-emerald-700" : "text-gray-500 hover:bg-gray-50"}`}
-                  >
-                    Income
-                  </button>
+                    {casualIncomes.map((i) => (
+                      <option key={i.id} value={i.id}>{i.name}</option>
+                    ))}
+                  </select>
                 </div>
-                <input
-                  type="text"
-                  placeholder="Title (e.g. Groceries)"
-                  value={calTitle}
-                  onChange={(e) => setCalTitle(e.target.value)}
-                  className="w-full text-sm px-4 py-2 bg-gray-50 border-gray-200 border outline-none focus:border-indigo-400 focus:bg-white transition-colors rounded-xl"
-                  required
-                />
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                    Hourly Rate ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={logRate}
+                    onChange={(e) => setLogRate(e.target.value)}
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-400 outline-none"
+                    required
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  Hours Worked
+                </label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="0.25"
                   min="0"
-                  placeholder="Amount"
-                  value={calAmount}
-                  onChange={(e) => setCalAmount(e.target.value)}
-                  className="w-full text-sm px-4 py-2 bg-gray-50 border-gray-200 border outline-none focus:border-indigo-400 focus:bg-white transition-colors rounded-xl"
+                  value={logHours}
+                  onChange={(e) => setLogHours(e.target.value)}
+                  placeholder="e.g. 7.5"
+                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-400 outline-none"
                   required
+                  autoFocus
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                  Notes (optional)
+                </label>
+                <input
+                  type="text"
+                  value={logNotes}
+                  onChange={(e) => setLogNotes(e.target.value)}
+                  placeholder="e.g. Overtime, 9am-5pm"
+                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-400 outline-none"
+                />
+              </div>
+              <div className="flex gap-2">
                 <button
                   type="submit"
-                  className="w-full bg-indigo-600 text-white font-bold py-2 rounded-xl shadow-sm hover:shadow-md hover:bg-indigo-700 transition flex items-center justify-center text-sm"
+                  disabled={isSavingLog}
+                  className="flex-1 bg-indigo-600 text-white text-sm font-medium py-2.5 rounded-xl hover:bg-indigo-700 transition disabled:opacity-50"
                 >
-                  {calIdToEdit ? "Save Changes" : "Add Event"}
+                  {isSavingLog ? "Saving..." : "Save Shift"}
                 </button>
-              </form>
-            </div>
-            <div className="flex-1 space-y-3 max-h-[300px] overflow-y-auto pr-2">
-              {selectedEvents.length === 0 ? (
-                <div className="text-sm text-gray-400 p-6 bg-white/50 border border-gray-100 rounded-2xl text-center italic">
-                  No events on this day.
-                </div>
-              ) : (
-                selectedEvents.map((e) => (
-                  <div
-                    key={e.id}
-                    className="flex justify-between items-center p-3 md:p-4 rounded-xl border border-gray-100 bg-white shadow-sm group"
-                  >
-                    <div>
-                      <div className="text-sm font-semibold text-gray-800">
-                        {e.title}
-                      </div>
-                      <div
-                        className={`text-xs font-bold mt-0.5 ${e.type === "income" ? "text-emerald-600" : "text-rose-600"}`}
-                      >
-                        {e.type === "income" ? "+" : "-"}$
-                        {Number(e.amount).toFixed(2)}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleEdit(e)}
-                        className="p-1.5 text-gray-400 bg-gray-50 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition-colors"
-                        aria-label="Edit event"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => onDeleteEvent(e.id)}
-                        className="p-1.5 text-gray-400 bg-gray-50 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-colors"
-                        aria-label="Delete event"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLogForm(false)}
+                  className="px-4 py-2.5 text-sm text-gray-500 bg-gray-50 rounded-xl hover:bg-gray-100 transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          )}
+
+          {selectedDayLogs.length === 0 && !showLogForm ? (
+            <p className="text-sm text-gray-400 text-center py-4 italic">
+              No shifts logged on this day.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {selectedDayLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="flex items-center justify-between p-3 md:p-4 bg-white rounded-xl border border-gray-100 shadow-sm"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">
+                      {log.income_stream_name}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {Number(log.hours)}h × ${money(Number(log.hourly_rate))}/hr ={" "}
+                      <span className="font-bold text-emerald-600">
+                        ${money(weekTotal(log))}
+                      </span>
+                      {log.notes && (
+                        <span className="ml-2 text-gray-400">· {log.notes}</span>
+                      )}
+                    </p>
                   </div>
-                ))
-              )}
+                  <button
+                    onClick={() => handleDeleteShift(log.id)}
+                    className="p-1.5 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                    aria-label="Delete shift"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
             </div>
-          </div>
+          )}
         </div>
+      </div>
+
+      {/* Debt Payoff Progress */}
+      <div className="glass-card p-4 md:p-6 border border-white/60">
+        <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+          <TrendingDown className="w-5 h-5 text-indigo-600" />
+          Debt Payoff Progress
+        </h2>
+        {chartData.length < 2 ? (
+          <div className="text-center py-12 text-gray-400 text-sm">
+            Not enough data yet — your debt balance chart appears after a few
+            weeks of tracking.
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="week" tick={{ fontSize: 12 }} />
+              <YAxis
+                tickFormatter={(v: number) => `$${(v / 1000).toFixed(1)}k`}
+                tick={{ fontSize: 12 }}
+                width={50}
+              />
+              <Tooltip
+                formatter={(v) => [`$${money(Number(v))}`, "Total Debt"]}
+              />
+              <Line
+                type="monotone"
+                dataKey="balance"
+                stroke="#6366f1"
+                strokeWidth={2}
+                dot={{ r: 3 }}
+                activeDot={{ r: 5 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </div>
   );

@@ -58,17 +58,6 @@ export function buildBudgetCsv(state: BudgetState): string {
       w.unallocatedCash.toFixed(2),
     ]);
   }
-  for (const ev of state.calendarEvents || []) {
-    rows.push([
-      "Calendar Event",
-      ev.title,
-      `${ev.date} (${ev.type})`,
-      ev.amount.toFixed(2),
-      "",
-      "",
-    ]);
-  }
-
   rows.push([]);
   rows.push(["Summary", "Gross Weekly Income", "", summary.weeklyGrossIncome.toFixed(2), "", ""]);
   rows.push(["Summary", "Tax / Medicare / HECS", "", summary.totalDeductions.toFixed(2), "", ""]);

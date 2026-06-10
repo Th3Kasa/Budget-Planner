@@ -22,7 +22,6 @@ import { downloadBudgetCsv } from "../lib/exportCsv";
 import {
   BudgetElement,
   BudgetState,
-  CalendarEvent,
   IncomeStream,
   SavingsGoal,
 } from "../types";
@@ -556,28 +555,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     }));
   };
 
-  // ----- Calendar -----
-
-  const handleSaveCalendarEvent = (ev: CalendarEvent) => {
-    setState((prev) => {
-      const events = prev.calendarEvents || [];
-      const exists = events.some((x) => x.id === ev.id);
-      return {
-        ...prev,
-        calendarEvents: exists
-          ? events.map((x) => (x.id === ev.id ? ev : x))
-          : [...events, ev],
-      };
-    });
-  };
-
-  const handleDeleteCalendarEvent = (id: string) => {
-    setState((prev) => ({
-      ...prev,
-      calendarEvents: (prev.calendarEvents || []).filter((e) => e.id !== id),
-    }));
-  };
-
   // ----- Settings -----
 
   const handleToggleCentrelink = (enabled: boolean) => {
@@ -690,9 +667,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               totalDebts={totalDebts}
               totalSavingsCont={totalSavingsCont}
               weeklySurplus={weeklySurplus}
-              calendarEvents={state.calendarEvents || []}
-              onSaveEvent={handleSaveCalendarEvent}
-              onDeleteEvent={handleDeleteCalendarEvent}
+              incomes={state.incomes}
+              session={session}
             />
           )}
 
