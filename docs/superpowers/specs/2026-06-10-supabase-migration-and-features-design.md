@@ -9,7 +9,7 @@
 
 Four connected changes to the Budget Planner app:
 
-1. **Replace Firebase with Supabase** — free Postgres backend, email magic-link auth, row-level security
+1. **Replace Firebase with Supabase** — free Postgres backend, anonymous auth (no login screen), row-level security
 2. **Live proportional debt reallocation** — remove Auto-Allocate button; edits to one debt instantly re-split the surplus across the rest
 3. **Drag-to-reorder Expenses & Debts** — dnd-kit with snap animations; debt order becomes allocation priority
 4. **Shift logging & calendar** — replace the static "Events for [date]" section with a real shift-log flow tied to the calendar and a debt payoff chart
@@ -20,10 +20,13 @@ Four connected changes to the Budget Planner app:
 
 ### 2.1 Auth
 
-- Email magic link only (no Google OAuth — avoids the Firebase console setup problem)
-- PIN screen remains as the local lock after authentication
-- `supabase.auth.signInWithOtp({ email })` → user clicks link → session established
-- On first authenticated load, if `localStorage` has `budget_state_v4`, upload it to Supabase and clear the flag so it only migrates once
+- **Anonymous auth only** — no email, no Google, no sign-in screen
+- On first load, `supabase.auth.signInAnonymously()` creates a persistent anonymous session; Supabase stores the session token in localStorage automatically
+- Subsequent loads restore the session via `supabase.auth.getSession()` — no re-auth needed
+- PIN screen remains as the only local lock (unchanged)
+- RLS policies use `auth.uid()` from the anonymous session — data is fully isolated per device/browser
+- The Settings "Cloud Sync" card shows sync status (active / offline) only — no sign-in button needed
+- On first session establishment, if `localStorage` has `budget_state_v4`, upload it to Supabase and set `localStorage.budget_migrated = "true"` to prevent repeat uploads
 
 ### 2.2 Database Schema
 
@@ -203,7 +206,7 @@ New chart in HistoryTab below the existing log table:
 | `src/lib/allocation.ts` | New proportional algorithm, remove waterfall priority logic |
 | `src/components/tabs/HomeTab.tsx` | Add dnd-kit to Expenses & Debts; remove Auto-Allocate button |
 | `src/components/tabs/HistoryTab.tsx` | Remove calendar events; add Log Shift panel; add debt payoff chart |
-| `src/components/tabs/SettingsTab.tsx` | Update auth card to magic-link sign-in/out |
+| `src/components/tabs/SettingsTab.tsx` | Replace Google/magic-link card with sync status indicator only |
 | `package.json` | Add `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`, `@supabase/supabase-js`; remove `firebase` |
 | `.env.local` | New — Supabase URL and anon key |
 
