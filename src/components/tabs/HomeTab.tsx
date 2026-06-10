@@ -245,7 +245,7 @@ export default function HomeTab({
                 key={inc.id}
                 className="bg-white/40 p-2 rounded-lg border border-white/60 relative group/inc"
               >
-                <div className="absolute right-1 top-1 opacity-0 group-hover/inc:opacity-100 flex items-center gap-2 transition-opacity">
+                <div className="absolute right-1 top-1 opacity-100 sm:opacity-0 sm:group-hover/inc:opacity-100 flex items-center gap-2 transition-opacity">
                   <button
                     onClick={() => onEdit("income", inc)}
                     className="text-gray-400 hover:text-indigo-600 transition-colors"
@@ -532,7 +532,7 @@ export default function HomeTab({
                                   / week
                                 </p>
                               </div>
-                              <div className="opacity-0 group-hover:opacity-100 flex items-center transition-opacity">
+                              <div className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex items-center transition-opacity">
                                 <button
                                   onClick={() => onEdit("expense", item)}
                                   className="text-gray-400 hover:text-indigo-600 p-1 md:p-2 transition-colors"
@@ -614,7 +614,7 @@ export default function HomeTab({
                         <SortableRow key={item.id} id={item.id}>
                           {({ attributes, listeners }) => (
                             <div className="flex flex-col p-4 md:p-5 rounded-2xl bg-white/40 border border-white/60 hover:bg-white/60 transition-colors group relative">
-                              <div className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 flex items-center gap-2 transition-opacity">
+                              <div className="absolute right-3 top-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex items-center gap-2 transition-opacity">
                                 {item.isManuallySet && (
                                   <button
                                     onClick={() => onResetDebtAllocation(item.id)}
@@ -1052,7 +1052,7 @@ export default function HomeTab({
                           </div>
                           <button
                             onClick={() => onUndoWindfall(wf.id)}
-                            className="text-[10px] text-gray-400 hover:text-red-500 font-medium underline mt-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="text-[10px] text-gray-400 hover:text-red-500 font-medium underline mt-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                           >
                             Undo Allocation
                           </button>
