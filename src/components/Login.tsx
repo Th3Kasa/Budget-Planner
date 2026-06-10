@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Fingerprint, LockKeyhole, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 
 interface LoginProps {
@@ -14,6 +14,8 @@ export default function Login({ onLogin }: LoginProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [scanStatus, setScanStatus] = useState('');
   const [scanSuccess, setScanSuccess] = useState(false);
+  // Ref lets the cancel button abort the timeout chain without a stale closure.
+  const scanCancelledRef = useRef(false);
 
   // Check if WebAuthn or simulated biometrics are supported
   useEffect(() => {
@@ -40,21 +42,26 @@ export default function Login({ onLogin }: LoginProps) {
       return;
     }
 
+    scanCancelledRef.current = false;
     setIsScanning(true);
     setScanSuccess(false);
     setScanStatus('Initializing camera & sensor...');
 
     setTimeout(() => {
+      if (scanCancelledRef.current) return;
       setScanStatus('Scanning Face / Fingerprint...');
-      
+
       setTimeout(() => {
+        if (scanCancelledRef.current) return;
         setScanStatus('Verifying secure device keys...');
-        
+
         setTimeout(() => {
+          if (scanCancelledRef.current) return;
           setScanSuccess(true);
           setScanStatus('Biometric Matched!');
-          
+
           setTimeout(() => {
+            if (scanCancelledRef.current) return;
             setIsScanning(false);
             onLogin();
           }, 800);
@@ -161,7 +168,7 @@ export default function Login({ onLogin }: LoginProps) {
             {!scanSuccess && (
               <button
                 type="button"
-                onClick={() => setIsScanning(false)}
+                onClick={() => { scanCancelledRef.current = true; setIsScanning(false); }}
                 className="mt-6 px-4 py-2 bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors rounded-xl text-xs font-semibold"
               >
                 Cancel

@@ -41,6 +41,14 @@ export default function GoalsTab({
       alert("Insufficient funds in Cash Vault!");
       return;
     }
+    const goal = savings.find((s) => s.id === goalId);
+    if (goal && goal.targetAmount > 0) {
+      const remaining = goal.targetAmount - (goal.currentAmount || 0);
+      if (amt > remaining) {
+        alert(`That would overshoot the target. Maximum you can add is $${remaining.toFixed(2)}.`);
+        return;
+      }
+    }
     onAllocateFromVault(goalId, amt);
     setAllocatingGoalId(null);
     setAllocationAmount("");
@@ -174,10 +182,10 @@ export default function GoalsTab({
                     <div className="flex justify-between items-end text-sm mb-2">
                       <div>
                         <span className="text-lg font-bold text-gray-900">
-                          ${current.toLocaleString()}
+                          ${money(current)}
                         </span>
                         <span className="text-xs text-gray-500 ml-1">
-                          saved of ${target.toLocaleString()}
+                          saved of ${money(target)}
                         </span>
                       </div>
                       <span className="font-bold text-indigo-600 text-xs">

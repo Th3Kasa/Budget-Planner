@@ -75,6 +75,13 @@ export default function HistoryTab({
 
   const monthlySurplus = weeklySurplus * WEEKS_PER_MONTH;
 
+  // Keep logStreamId pointing at a valid stream even if incomes list changes.
+  useEffect(() => {
+    if (casualIncomes.length === 0) return;
+    const valid = casualIncomes.some((i) => i.id === logStreamId);
+    if (!valid) setLogStreamId(casualIncomes[0].id);
+  }, [casualIncomes, logStreamId]);
+
   // Pre-fill the hourly rate from the selected income stream.
   useEffect(() => {
     const stream = incomes.find((i) => i.id === logStreamId);
@@ -251,6 +258,8 @@ export default function HistoryTab({
                 onClick={() => {
                   setSelectedDate(dateStr);
                   setShowLogForm(false);
+                  setLogHours("");
+                  setLogNotes("");
                 }}
                 className={`p-1 md:p-2 rounded-xl border flex flex-col items-center justify-start min-h-[52px] md:min-h-[70px] transition-all cursor-pointer ${
                   isCurrent
