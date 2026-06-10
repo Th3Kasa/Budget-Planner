@@ -79,6 +79,23 @@ export default function GoalsTab({
     0,
   );
 
+  // Per-goal weeks remaining; 0 = no target or fully funded
+  const weeksLeft = (s: SavingsGoal): number => {
+    if (!s.targetAmount || !s.weeklyContribution) return 0;
+    const remaining = s.targetAmount - (s.currentAmount || 0);
+    if (remaining <= 0) return 0;
+    return Math.ceil(remaining / s.weeklyContribution);
+  };
+
+  // Combined countdown = longest individual goal (the last one to complete)
+  const goalsWithCountdown = savings.filter(
+    (s) => s.targetAmount > 0 && s.weeklyContribution > 0 && s.targetAmount > (s.currentAmount || 0),
+  );
+  const maxWeeks =
+    goalsWithCountdown.length > 0
+      ? Math.max(...goalsWithCountdown.map(weeksLeft))
+      : 0;
+
   const handleTransfer = (goalId: string) => {
     const amt = Number(allocationAmount);
     if (isNaN(amt) || amt <= 0) return;
@@ -131,19 +148,26 @@ export default function GoalsTab({
           </p>
         </div>
 
-        <div className="glass-card p-6 border border-indigo-100/50 relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-bl-full pointer-events-none" />
+        <div className="glass-card p-6 border border-violet-100/50 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-violet-500/5 rounded-bl-full pointer-events-none" />
           <h3 className="text-sm font-medium text-gray-500">
-            Weekly Savings Rate
+            All Goals Complete In
           </h3>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-indigo-600">
-              ${money(weeklyRate)}
-            </span>
-            <span className="text-xs text-gray-500 font-medium">/wk</span>
+            {maxWeeks > 0 ? (
+              <>
+                <span className="text-3xl font-extrabold text-violet-600">
+                  {maxWeeks.toLocaleString()}
+                </span>
+                <span className="text-xs text-gray-500 font-medium">weeks</span>
+              </>
+            ) : (
+              <span className="text-3xl font-extrabold text-gray-400">—</span>
+            )}
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            Allocations committed per week
+            ${money(weeklyRate)}/wk total rate
+            {maxWeeks > 0 && ` · ~${(maxWeeks / 52).toFixed(1)} yrs`}
           </p>
         </div>
       </div>
@@ -368,7 +392,7 @@ export default function GoalsTab({
                       </span>
                     </div>
 
-                    <div className="w-full bg-gray-100 rounded-full h-3 mb-4 overflow-hidden shadow-inner">
+                    <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden shadow-inner">
                       <div
                         className="h-3 rounded-full transition-all duration-1000 ease-out"
                         style={{
@@ -377,6 +401,13 @@ export default function GoalsTab({
                         }}
                       />
                     </div>
+                    {weeksLeft(s) > 0 && (
+                      <p className="text-xs text-gray-400 mt-1.5 mb-3">
+                        • {weeksLeft(s).toLocaleString()} weeks left
+                        <span className="text-gray-300 mx-1">·</span>
+                        ~{(weeksLeft(s) / 52).toFixed(1)} yrs
+                      </p>
+                    )}
                   </div>
 
                   <div className="mt-2 border-t border-gray-100/60 pt-4">
