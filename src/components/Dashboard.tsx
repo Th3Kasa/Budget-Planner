@@ -599,6 +599,30 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     setState((prev) => ({ ...prev, cashBalance: Math.max(0, newBalance) }));
   };
 
+  const updateSavingsWeight = (id: string, weight: number) => {
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        savings: prev.savings.map((s) =>
+          s.id === id
+            ? { ...s, splitWeight: Math.max(0.1, weight), isManuallyWeighted: true }
+            : s,
+        ),
+      }),
+    );
+  };
+
+  const resetSavingsWeight = (id: string) => {
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        savings: prev.savings.map((s) =>
+          s.id === id ? { ...s, splitWeight: undefined, isManuallyWeighted: false } : s,
+        ),
+      }),
+    );
+  };
+
   const handleAllocateFromVault = (goalId: string, amount: number) => {
     setState((prev) => ({
       ...prev,
@@ -736,6 +760,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onEditGoal={(goal) => openEditModal("savings", goal)}
               onRemoveGoal={(id) => removeItem("savings", id)}
               onAddGoal={() => openAddModal("savings")}
+              onUpdateSavingsWeight={updateSavingsWeight}
+              onResetSavingsWeight={resetSavingsWeight}
             />
           )}
 

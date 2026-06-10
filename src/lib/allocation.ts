@@ -31,8 +31,9 @@ function splitProportional(
   return Math.max(0, pool);
 }
 
-// Split `pool` equally across unlocked savings goals, capping each at the
-// gap left to its target. Returns leftover pool.
+// Distribute `pool` across savings goals proportionally by their splitWeight
+// (defaults to 1 = equal share), capping each at the gap to its target.
+// Returns leftover pool.
 function fillSavingsEqually(
   goals: SavingsGoal[],
   pool: number,
@@ -41,13 +42,17 @@ function fillSavingsEqually(
 ): number {
   let open = goals.filter((s) => gap(s) > 0.01);
   while (open.length > 0 && pool > 0.01) {
-    const split = pool / open.length;
+    const totalWeight = open.reduce((sum, s) => sum + (s.splitWeight || 1), 0);
+    let spent = 0;
     for (const s of open) {
-      const amt = Math.min(split, gap(s));
+      const share = ((s.splitWeight || 1) / totalWeight) * pool;
+      const amt = Math.min(share, gap(s));
       if (amt > 0.001) assign(s, amt);
-      pool -= amt;
+      spent += amt;
     }
+    pool -= spent;
     open = open.filter((s) => gap(s) > 0.01);
+    if (spent < 0.001) break;
   }
   return Math.max(0, pool);
 }

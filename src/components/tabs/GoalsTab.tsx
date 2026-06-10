@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Edit2, Plus, Target, Trash2, Wallet } from "lucide-react";
+import { Edit2, Plus, RotateCcw, Target, Trash2, Wallet } from "lucide-react";
 import { SavingsGoal } from "../../types";
 
 const money = (v: number) =>
@@ -15,6 +15,8 @@ interface GoalsTabProps {
   onEditGoal: (goal: SavingsGoal) => void;
   onRemoveGoal: (id: string) => void;
   onAddGoal: () => void;
+  onUpdateSavingsWeight: (id: string, weight: number) => void;
+  onResetSavingsWeight: (id: string) => void;
 }
 
 export default function GoalsTab({
@@ -24,9 +26,21 @@ export default function GoalsTab({
   onEditGoal,
   onRemoveGoal,
   onAddGoal,
+  onUpdateSavingsWeight,
+  onResetSavingsWeight,
 }: GoalsTabProps) {
   const [allocatingGoalId, setAllocatingGoalId] = useState<string | null>(null);
   const [allocationAmount, setAllocationAmount] = useState("");
+  const [editingWeightId, setEditingWeightId] = useState<string | null>(null);
+  const [editingWeightValue, setEditingWeightValue] = useState("");
+
+  // Unlocked goals share the auto-allocation pool; compute each goal's actual %
+  const unlockedGoals = savings.filter((s) => !s.isLocked);
+  const totalWeight = unlockedGoals.reduce((sum, s) => sum + (s.splitWeight || 1), 0);
+  const getSplitPct = (s: SavingsGoal) =>
+    totalWeight > 0
+      ? Math.round(((s.splitWeight || 1) / totalWeight) * 100)
+      : 100;
 
   const totalSaved = savings.reduce((acc, s) => acc + (s.currentAmount || 0), 0);
   const weeklyRate = savings.reduce(
@@ -165,17 +179,70 @@ export default function GoalsTab({
                   <div>
                     <div className="flex items-center gap-3 mb-4">
                       <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center text-white shadow"
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-white shadow flex-shrink-0"
                         style={{ backgroundColor: s.color || "#3b82f6" }}
                       >
                         <Target className="w-5 h-5 flex-shrink-0" />
                       </div>
-                      <div>
-                        <h3 className="font-bold text-gray-900">{s.name}</h3>
-                        <p className="text-xs text-gray-500">
-                          ${money(s.weeklyContribution || 0)}/wk automatic
-                          contribution
-                        </p>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-gray-900 truncate">{s.name}</h3>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                          <p className="text-xs text-gray-500">
+                            ${money(s.weeklyContribution || 0)}/wk auto
+                          </p>
+                          {!s.isLocked && (
+                            <>
+                              <span className="text-gray-300">·</span>
+                              {editingWeightId === s.id ? (
+                                <span className="flex items-center gap-0.5">
+                                  <input
+                                    type="number"
+                                    min="0.1"
+                                    step="1"
+                                    autoFocus
+                                    value={editingWeightValue}
+                                    onChange={(e) => setEditingWeightValue(e.target.value)}
+                                    onBlur={() => {
+                                      const v = Number(editingWeightValue);
+                                      if (editingWeightValue !== "" && !isNaN(v) && v > 0) {
+                                        onUpdateSavingsWeight(s.id, v);
+                                      }
+                                      setEditingWeightId(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") e.currentTarget.blur();
+                                      else if (e.key === "Escape") setEditingWeightId(null);
+                                    }}
+                                    className="text-xs font-bold bg-transparent border-b border-indigo-500 outline-none w-10 text-center"
+                                  />
+                                  <span className="text-xs text-gray-500">wt</span>
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingWeightId(s.id);
+                                    setEditingWeightValue(String(s.splitWeight || 1));
+                                  }}
+                                  className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded hover:bg-indigo-100 transition-colors"
+                                  title="Click to set split weight"
+                                >
+                                  {getSplitPct(s)}% split
+                                </button>
+                              )}
+                              {s.isManuallyWeighted && editingWeightId !== s.id && (
+                                <button
+                                  type="button"
+                                  onClick={() => onResetSavingsWeight(s.id)}
+                                  className="p-0.5 text-gray-400 hover:text-indigo-600 transition-colors"
+                                  title="Reset to equal split"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
 
