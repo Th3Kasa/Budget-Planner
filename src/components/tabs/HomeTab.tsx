@@ -118,7 +118,7 @@ export default function HomeTab({
   onPayDebt,
   onReorderExpenses,
   onReorderDebts,
-  onUpdateDebtAmount: _onUpdateDebtAmount,
+  onUpdateDebtAmount,
   onResetDebtAllocation,
   onRecordWindfall,
   onAdjustVault,
@@ -129,6 +129,8 @@ export default function HomeTab({
   const [adjustVaultAmount, setAdjustVaultAmount] = useState("");
   const [assetName, setAssetName] = useState("");
   const [assetAmount, setAssetAmount] = useState("");
+  const [editingDebtId, setEditingDebtId] = useState<string | null>(null);
+  const [editingDebtValue, setEditingDebtValue] = useState("");
 
   const centrelinkEnabled = state.centrelinkEnabled !== false;
   const cashBalance = state.cashBalance || 0;
@@ -636,8 +638,55 @@ export default function HomeTab({
                                         {item.name}
                                       </h3>
                                       <p className="text-xs text-gray-500 flex items-center gap-1">
-                                        ${item.amount.toFixed(2)}/wk repayment
-                                        {item.amount > 0 && current > 0 && (
+                                        {editingDebtId === item.id ? (
+                                          <span className="flex items-center gap-0.5">
+                                            <span className="text-gray-400">$</span>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="0.01"
+                                              autoFocus
+                                              value={editingDebtValue}
+                                              onChange={(e) => setEditingDebtValue(e.target.value)}
+                                              onBlur={() => {
+                                                const num = Number(editingDebtValue);
+                                                if (
+                                                  editingDebtValue !== "" &&
+                                                  !isNaN(num) &&
+                                                  num >= 0 &&
+                                                  num !== item.amount
+                                                ) {
+                                                  onUpdateDebtAmount(item.id, num);
+                                                }
+                                                setEditingDebtId(null);
+                                              }}
+                                              onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                  e.currentTarget.blur();
+                                                } else if (e.key === "Escape") {
+                                                  setEditingDebtId(null);
+                                                }
+                                              }}
+                                              className="text-xs font-bold bg-transparent border-b border-indigo-500 outline-none w-14 text-right"
+                                            />
+                                            <span>/wk repayment</span>
+                                          </span>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setEditingDebtId(item.id);
+                                              setEditingDebtValue(item.amount.toFixed(2));
+                                            }}
+                                            className="group/amt inline-flex items-center gap-0.5 hover:text-indigo-600 transition-colors"
+                                            title="Click to edit weekly repayment"
+                                          >
+                                            <span className="border-b border-transparent group-hover/amt:border-indigo-400 transition-colors">
+                                              ${item.amount.toFixed(2)}/wk repayment
+                                            </span>
+                                          </button>
+                                        )}
+                                        {item.amount > 0 && current > 0 && editingDebtId !== item.id && (
                                           <span>
                                             {" "}
                                             • {Math.ceil(current / item.amount)} weeks left
