@@ -20,6 +20,7 @@ interface GoalsTabProps {
   onRecalculateSavings: () => void;
   onLockSavingsGoal: (id: string, amount: number) => void;
   onUnlockSavingsGoal: (id: string) => void;
+  onPaySavingsGoal: (id: string) => void;
 }
 
 export default function GoalsTab({
@@ -34,6 +35,7 @@ export default function GoalsTab({
   onRecalculateSavings,
   onLockSavingsGoal,
   onUnlockSavingsGoal,
+  onPaySavingsGoal,
 }: GoalsTabProps) {
   const [allocatingGoalId, setAllocatingGoalId] = useState<string | null>(null);
   const [allocationAmount, setAllocationAmount] = useState("");
@@ -440,25 +442,33 @@ export default function GoalsTab({
                         </button>
                       </div>
                     ) : (
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-400">
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="text-xs text-gray-400 flex-1 min-w-0">
                           Cash Vault:{" "}
                           <b className="font-bold text-gray-600">
                             ${cashBalance.toFixed(2)}
-                          </b>{" "}
-                          available
+                          </b>
                         </span>
-                        <button
-                          onClick={() => {
-                            setAllocatingGoalId(s.id);
-                            setAllocationAmount("");
-                          }}
-                          disabled={cashBalance <= 0}
-                          className="text-xs font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
-                        >
-                          <Wallet className="w-3.5 h-3.5 flex-shrink-0" /> Add
-                          Vault Cash
-                        </button>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            onClick={() => onPaySavingsGoal(s.id)}
+                            disabled={pct >= 100 || (s.weeklyContribution || 0) <= 0}
+                            className="text-xs font-bold uppercase tracking-wider bg-blue-100 text-blue-700 hover:bg-blue-200 px-2 py-1.5 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                            title={`Add $${(s.weeklyContribution || 0).toFixed(2)} to saved amount`}
+                          >
+                            <Plus className="w-3 h-3" /> Pay
+                          </button>
+                          <button
+                            onClick={() => {
+                              setAllocatingGoalId(s.id);
+                              setAllocationAmount("");
+                            }}
+                            disabled={cashBalance <= 0}
+                            className="text-xs font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                          >
+                            <Wallet className="w-3.5 h-3.5 flex-shrink-0" /> Vault
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

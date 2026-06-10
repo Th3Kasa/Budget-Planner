@@ -670,6 +670,23 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     );
   };
 
+  const paySavingsGoal = (id: string) => {
+    setState((prev) => ({
+      ...prev,
+      savings: prev.savings.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              currentAmount: Math.min(
+                s.targetAmount || Infinity,
+                (s.currentAmount || 0) + (s.weeklyContribution || 0),
+              ),
+            }
+          : s,
+      ),
+    }));
+  };
+
   const handleCommitWeek = async (): Promise<void> => {
     if (!session?.user) return;
     const weekStart = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
@@ -825,6 +842,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onUndoWindfall={handleUndoWindfall}
               onCommitWeek={handleCommitWeek}
               savings={state.savings}
+              onPaySavingsGoal={paySavingsGoal}
             />
           )}
 
@@ -853,6 +871,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onRecalculateSavings={recalculateAllSavings}
               onLockSavingsGoal={lockSavingsGoal}
               onUnlockSavingsGoal={unlockSavingsGoal}
+              onPaySavingsGoal={paySavingsGoal}
             />
           )}
 

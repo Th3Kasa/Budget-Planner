@@ -73,6 +73,7 @@ interface HomeTabProps {
   onUndoWindfall: (id: string) => void;
   onCommitWeek: () => Promise<void>;
   savings: SavingsGoal[];
+  onPaySavingsGoal: (id: string) => void;
 }
 
 type SortableHandleProps = Pick<ReturnType<typeof useSortable>, "attributes" | "listeners">;
@@ -129,6 +130,7 @@ export default function HomeTab({
   onUndoWindfall,
   onCommitWeek,
   savings,
+  onPaySavingsGoal,
 }: HomeTabProps) {
   const [isSellingAsset, setIsSellingAsset] = useState(false);
   const [windfallStep, setWindfallStep] = useState<"enter" | "allocate">("enter");
@@ -1202,16 +1204,27 @@ export default function HomeTab({
                             <span className="ml-1 text-amber-500">🔒</span>
                           )}
                         </span>
-                        {weeksLeft !== null && (
-                          <span className="text-[10px] text-gray-400">
-                            ~{weeksLeft} weeks left
-                          </span>
-                        )}
-                        {pct >= 100 && (
-                          <span className="text-[10px] font-bold text-green-600">
-                            Complete!
-                          </span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {weeksLeft !== null && !( pct >= 100) && (
+                            <span className="text-[10px] text-gray-400">
+                              ~{weeksLeft} wks left
+                            </span>
+                          )}
+                          {pct >= 100 ? (
+                            <span className="text-[10px] font-bold text-green-600">
+                              Complete!
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => onPaySavingsGoal(s.id)}
+                              disabled={(s.weeklyContribution || 0) <= 0}
+                              className="text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 hover:bg-blue-200 px-1.5 py-0.5 rounded transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-0.5"
+                              title={`Add $${(s.weeklyContribution || 0).toFixed(2)} to this goal`}
+                            >
+                              <Plus className="w-2.5 h-2.5" /> Pay
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
