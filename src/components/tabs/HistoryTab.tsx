@@ -85,6 +85,7 @@ export default function HistoryTab({
   useEffect(() => {
     if (!session?.user) return;
     const userId = session.user.id;
+    let alive = true;
     Promise.all([
       supabase
         .from("shift_logs")
@@ -97,9 +98,17 @@ export default function HistoryTab({
         .eq("user_id", userId)
         .order("week_starting", { ascending: true }),
     ]).then(([logsRes, snapsRes]) => {
-      if (logsRes.data) setShiftLogs(logsRes.data as ShiftLog[]);
-      if (snapsRes.data) setSnapshots(snapsRes.data as WeeklySnapshot[]);
+      if (!alive) return;
+      if (logsRes.error)
+        console.error("Shift log load failed:", logsRes.error.message);
+      else if (logsRes.data) setShiftLogs(logsRes.data as ShiftLog[]);
+      if (snapsRes.error)
+        console.error("Snapshot load failed:", snapsRes.error.message);
+      else if (snapsRes.data) setSnapshots(snapsRes.data as WeeklySnapshot[]);
     });
+    return () => {
+      alive = false;
+    };
   }, [session]);
 
   const handleSaveShift = async (e: React.FormEvent) => {

@@ -370,9 +370,9 @@ export default function SettingsTab({
               )}
             </div>
             <div>
-              <h3 className="font-bold text-gray-900">Cloud Sync</h3>
+              <h3 className="font-bold text-gray-900">Cloud Backup</h3>
               <p className="text-xs text-gray-500">
-                Your budget syncs automatically across devices.
+                Your budget backs up to the cloud automatically.
               </p>
             </div>
             <span
@@ -388,7 +388,8 @@ export default function SettingsTab({
           <p className="text-[11px] text-gray-400 mt-4">
             Your data is stored securely in a private database protected by
             row-level security — no sign-in required. Shift logs and weekly debt
-            snapshots are saved to the cloud as you use the app.
+            snapshots are saved to the cloud as you use the app. Backup is tied
+            to this browser; clearing browser data starts a fresh backup.
           </p>
         </div>
       </div>

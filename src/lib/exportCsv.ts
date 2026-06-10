@@ -32,7 +32,7 @@ export function buildBudgetCsv(state: BudgetState): string {
     rows.push([
       "Debt",
       d.name,
-      d.isLocked ? "locked" : "auto",
+      d.isManuallySet ? "manually-set" : "auto",
       d.amount.toFixed(2),
       (d.totalBalance ?? 0).toFixed(2),
       (d.originalBalance ?? 0).toFixed(2),

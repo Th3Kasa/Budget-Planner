@@ -173,11 +173,16 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     emptyItemFields(),
   );
 
+  // Cloud writes are held until the initial cloud load finishes, so a
+  // freshly opened tab can never overwrite newer cloud data with stale
+  // local state.
+  const [cloudReady, setCloudReady] = useState(false);
+
   // Persist locally immediately; debounce cloud writes so inline edits
   // don't fire a Supabase write per keystroke.
   useEffect(() => {
     localStorage.setItem("budget_state_v4", JSON.stringify(state));
-    if (!session?.user) return;
+    if (!session?.user || !cloudReady) return;
     const timeout = setTimeout(() => {
       supabase
         .from("budgets")
@@ -194,7 +199,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         });
     }, 800);
     return () => clearTimeout(timeout);
-  }, [state, session]);
+  }, [state, session, cloudReady]);
 
   // On first session: pull cloud state (or migrate local data up once).
   // Then subscribe to realtime updates from other devices.
@@ -209,6 +214,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         .eq("user_id", userId)
         .maybeSingle();
       if (error) {
+        // Leave cloudReady false: don't risk overwriting cloud data we
+        // couldn't read. Local-only mode still works.
         console.error("Cloud load failed:", error.message);
         return;
       }
@@ -220,7 +227,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         );
       }
       // No cloud row yet: the debounced write effect above will create it
-      // from the current local state.
+      // from the current local state once cloudReady is set.
+      setCloudReady(true);
     };
     load();
 
