@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import {
   Briefcase,
+  CheckCircle2,
+  ChevronDown,
   CircleDollarSign,
   Edit2,
   GripVertical,
@@ -69,6 +71,8 @@ interface HomeTabProps {
   onRecordWindfall: (name: string, amount: number, priorities?: { debtId: string; amount: number }[]) => void;
   onAdjustVault: (newBalance: number) => void;
   onUndoWindfall: (id: string) => void;
+  onCommitWeek: () => Promise<void>;
+  savings: SavingsGoal[];
 }
 
 type SortableHandleProps = Pick<ReturnType<typeof useSortable>, "attributes" | "listeners">;
@@ -123,6 +127,8 @@ export default function HomeTab({
   onRecordWindfall,
   onAdjustVault,
   onUndoWindfall,
+  onCommitWeek,
+  savings,
 }: HomeTabProps) {
   const [isSellingAsset, setIsSellingAsset] = useState(false);
   const [windfallStep, setWindfallStep] = useState<"enter" | "allocate">("enter");
@@ -133,6 +139,8 @@ export default function HomeTab({
   const [debtAllocations, setDebtAllocations] = useState<Record<string, string>>({});
   const [editingDebtId, setEditingDebtId] = useState<string | null>(null);
   const [editingDebtValue, setEditingDebtValue] = useState("");
+  const [commitState, setCommitState] = useState<"idle" | "loading" | "done">("idle");
+  const [savingsOpen, setSavingsOpen] = useState(false);
 
   const centrelinkEnabled = state.centrelinkEnabled !== false;
   const cashBalance = state.cashBalance || 0;
@@ -198,6 +206,18 @@ export default function HomeTab({
     onAdjustVault(Math.max(0, Number(adjustVaultAmount)));
     setIsAdjustingVault(false);
     setAdjustVaultAmount("");
+  };
+
+  const handleCommit = async () => {
+    if (commitState !== "idle") return;
+    setCommitState("loading");
+    try {
+      await onCommitWeek();
+      setCommitState("done");
+      setTimeout(() => setCommitState("idle"), 3000);
+    } catch {
+      setCommitState("idle");
+    }
   };
 
   const inlineNumberInput = (
@@ -463,6 +483,36 @@ export default function HomeTab({
       </div>
 
       <div className="max-w-3xl mx-auto w-full space-y-6">
+        {/* Commit This Week */}
+        <div className="glass-card p-4 md:p-5 border border-indigo-100 bg-gradient-to-r from-indigo-50/60 to-purple-50/40 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-bold text-gray-800">Commit This Week</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Logs your income &amp; saves a snapshot for the calendar &amp; history
+            </p>
+          </div>
+          <button
+            onClick={handleCommit}
+            disabled={commitState !== "idle"}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm flex-shrink-0 transition-all",
+              commitState === "done"
+                ? "bg-green-100 text-green-700 border border-green-200"
+                : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200 disabled:opacity-60",
+            )}
+          >
+            {commitState === "loading" && (
+              <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            )}
+            {commitState === "done" && <CheckCircle2 className="w-4 h-4" />}
+            {commitState === "loading"
+              ? "Saving…"
+              : commitState === "done"
+                ? "Committed!"
+                : "Commit Week"}
+          </button>
+        </div>
+
         {/* Expenses & Debts */}
         <div className="glass-card p-4 md:p-6">
           <div className="flex items-center justify-between mb-6">
@@ -1093,6 +1143,83 @@ export default function HomeTab({
             </div>
           )}
         </div>
+
+        {/* Savings Goals mini-widget */}
+        {savings.length > 0 && (
+          <div className="glass-card p-4 md:p-6">
+            <button
+              className="w-full flex items-center justify-between"
+              onClick={() => setSavingsOpen((o) => !o)}
+              aria-expanded={savingsOpen}
+            >
+              <h2 className="text-base md:text-lg font-bold text-gray-900">
+                Savings Goals
+              </h2>
+              <ChevronDown
+                className={cn(
+                  "w-4 h-4 text-gray-400 transition-transform",
+                  savingsOpen && "rotate-180",
+                )}
+              />
+            </button>
+
+            {savingsOpen && (
+              <div className="mt-4 space-y-4">
+                {savings.map((s) => {
+                  const pct =
+                    s.targetAmount > 0
+                      ? Math.min(
+                          100,
+                          ((s.currentAmount || 0) / s.targetAmount) * 100,
+                        )
+                      : 0;
+                  const remaining = s.targetAmount - (s.currentAmount || 0);
+                  const weeksLeft =
+                    s.weeklyContribution > 0 && remaining > 0
+                      ? Math.ceil(remaining / s.weeklyContribution)
+                      : null;
+                  return (
+                    <div key={s.id}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-semibold text-gray-800">
+                          {s.name}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          ${(s.currentAmount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}{" "}
+                          / ${s.targetAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="h-2 rounded-full transition-all duration-700"
+                          style={{ width: `${pct}%`, backgroundColor: s.color || "#6366f1" }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-[10px] text-gray-400">
+                          +${s.weeklyContribution.toFixed(2)}/wk
+                          {s.isLocked && (
+                            <span className="ml-1 text-amber-500">🔒</span>
+                          )}
+                        </span>
+                        {weeksLeft !== null && (
+                          <span className="text-[10px] text-gray-400">
+                            ~{weeksLeft} weeks left
+                          </span>
+                        )}
+                        {pct >= 100 && (
+                          <span className="text-[10px] font-bold text-green-600">
+                            Complete!
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Allocation Chart */}
         <div className="glass-card p-4 md:p-6 flex flex-col h-[300px] md:h-[400px]">

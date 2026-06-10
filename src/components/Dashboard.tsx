@@ -670,6 +670,45 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     );
   };
 
+  const handleCommitWeek = async (): Promise<void> => {
+    if (!session?.user) return;
+    const weekStart = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
+    const userId = session.user.id;
+
+    // Write one shift_log entry per casual income stream using its weekly totals.
+    const casualStreams = state.incomes.filter((s) => s.type === "casual");
+    for (const stream of casualStreams) {
+      const hours = stream.useShifts
+        ? (stream.shifts ?? []).reduce((sum, sh) => sum + (sh.hours || 0), 0)
+        : stream.hoursWorked ?? 0;
+      const rate = stream.hourlyRate ?? 0;
+      if (hours > 0 && rate > 0) {
+        await supabase.from("shift_logs").insert({
+          user_id: userId,
+          shift_date: weekStart,
+          income_stream_id: stream.id,
+          income_stream_name: stream.name,
+          hours,
+          hourly_rate: rate,
+          notes: "Auto-committed from homepage",
+        });
+      }
+    }
+
+    // Upsert this week's snapshot (overrides any passive one).
+    const totalDebtBalance = state.debts.reduce((acc, d) => acc + (d.totalBalance ?? 0), 0);
+    await supabase.from("weekly_snapshots").upsert(
+      {
+        user_id: userId,
+        week_starting: weekStart,
+        net_income: summary.totalNetIncome,
+        total_debt_balance: totalDebtBalance,
+        total_paid_this_week: state.debts.reduce((acc, d) => acc + d.amount, 0),
+      },
+      { onConflict: "user_id,week_starting" },
+    );
+  };
+
   const handleAllocateFromVault = (goalId: string, amount: number) => {
     setState((prev) => ({
       ...prev,
@@ -784,6 +823,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onRecordWindfall={handleRecordWindfall}
               onAdjustVault={handleAdjustVault}
               onUndoWindfall={handleUndoWindfall}
+              onCommitWeek={handleCommitWeek}
+              savings={state.savings}
             />
           )}
 
