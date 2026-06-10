@@ -537,8 +537,13 @@ export default function HomeTab({
                                   ${item.amount.toFixed(2)}
                                 </p>
                                 <p className="text-[10px] md:text-xs text-gray-500">
-                                  / week
+                                  {item.frequency === "monthly" ? "/ month" : "/ week"}
                                 </p>
+                                {item.frequency === "monthly" && (
+                                  <p className="text-[10px] text-gray-400">
+                                    ≈ ${(item.amount / (52 / 12)).toFixed(2)}/wk
+                                  </p>
+                                )}
                               </div>
                               <div className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex items-center transition-opacity">
                                 <button
