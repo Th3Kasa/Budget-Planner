@@ -9,20 +9,16 @@ import {
   KeyRound,
   Landmark,
   Loader2,
-  LogOut,
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { User } from "firebase/auth";
 
 interface SettingsTabProps {
   centrelinkEnabled: boolean;
   centrelinkMaxFortnightly: number;
-  firebaseUser: User | null;
+  isSyncing: boolean;
   onToggleCentrelink: (enabled: boolean) => void;
   onChangeCentrelinkMax: (amount: number) => void;
-  onGoogleLogin?: () => void;
-  onGoogleLogout?: () => void;
   onExportCsv: () => void;
   onResetData: () => void;
 }
@@ -30,11 +26,9 @@ interface SettingsTabProps {
 export default function SettingsTab({
   centrelinkEnabled,
   centrelinkMaxFortnightly,
-  firebaseUser,
+  isSyncing,
   onToggleCentrelink,
   onChangeCentrelinkMax,
-  onGoogleLogin,
-  onGoogleLogout,
   onExportCsv,
   onResetData,
 }: SettingsTabProps) {
@@ -362,62 +356,41 @@ export default function SettingsTab({
 
         {/* Cloud Sync */}
         <div className="glass-card p-6 border border-gray-100/50 md:col-span-2">
-          <div className="flex items-center gap-3 mb-4">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${firebaseUser ? "bg-emerald-50 text-emerald-600" : "bg-gray-50 text-gray-400"}`}>
-              {firebaseUser ? <Cloud className="w-5 h-5 flex-shrink-0" /> : <CloudOff className="w-5 h-5 flex-shrink-0" />}
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                isSyncing
+                  ? "bg-emerald-50 text-emerald-600"
+                  : "bg-gray-50 text-gray-400"
+              }`}
+            >
+              {isSyncing ? (
+                <Cloud className="w-5 h-5 flex-shrink-0" />
+              ) : (
+                <CloudOff className="w-5 h-5 flex-shrink-0" />
+              )}
             </div>
             <div>
               <h3 className="font-bold text-gray-900">Cloud Sync</h3>
               <p className="text-xs text-gray-500">
-                Sync your budget across your phone, tablet, and computer.
+                Your budget syncs automatically across devices.
               </p>
             </div>
+            <span
+              className={`ml-auto text-[10px] uppercase font-bold px-2 py-1 rounded ${
+                isSyncing
+                  ? "bg-emerald-100 text-emerald-800"
+                  : "bg-gray-100 text-gray-500"
+              }`}
+            >
+              {isSyncing ? "Active" : "Offline"}
+            </span>
           </div>
-
-          {firebaseUser ? (
-            <div className="mt-4 space-y-3">
-              <div className="flex items-center gap-3 p-4 bg-emerald-50/60 border border-emerald-100 rounded-2xl">
-                {firebaseUser.photoURL && (
-                  <img
-                    src={firebaseUser.photoURL}
-                    alt=""
-                    className="w-9 h-9 rounded-full"
-                  />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{firebaseUser.displayName}</p>
-                  <p className="text-xs text-gray-500 truncate">{firebaseUser.email}</p>
-                </div>
-                <span className="text-[10px] uppercase font-bold px-2 py-1 rounded bg-emerald-100 text-emerald-800 whitespace-nowrap">
-                  Syncing
-                </span>
-              </div>
-              <button
-                onClick={onGoogleLogout}
-                className="w-full bg-white border border-gray-200 text-gray-600 font-semibold py-2.5 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition text-sm flex items-center justify-center gap-2"
-              >
-                <LogOut className="w-4 h-4" /> Disconnect Google Account
-              </button>
-            </div>
-          ) : (
-            <div className="mt-4 space-y-3">
-              <p className="text-sm text-gray-500">
-                Sign in with Google to automatically back up and sync your budget across all your devices. Your data is stored securely in your own private Firestore document.
-              </p>
-              <button
-                onClick={onGoogleLogin}
-                className="w-full bg-white border border-gray-200 text-gray-900 rounded-xl py-3 font-bold flex items-center justify-center gap-3 hover:bg-gray-50 hover:border-gray-300 transition shadow-sm"
-              >
-                <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                </svg>
-                Sign in with Google
-              </button>
-            </div>
-          )}
+          <p className="text-[11px] text-gray-400 mt-4">
+            Your data is stored securely in a private database protected by
+            row-level security — no sign-in required. Shift logs and weekly debt
+            snapshots are saved to the cloud as you use the app.
+          </p>
         </div>
       </div>
 
