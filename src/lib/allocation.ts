@@ -95,8 +95,10 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
   const savings = prevState.savings.map((s) => ({ ...s }));
 
   const { totalNetIncome } = summarizeIncome(prevState);
+  // Monthly expenses are converted to weekly (÷ 52/12 ≈ ÷ 4.333).
   const totalExpenses = prevState.expenses.reduce(
-    (acc, el) => acc + el.amount,
+    (acc, el) =>
+      acc + (el.frequency === "monthly" ? el.amount / (52 / 12) : el.amount),
     0,
   );
   let pool = Math.max(0, totalNetIncome - totalExpenses);
@@ -105,7 +107,7 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
   // the pool so we never allocate money that doesn't exist).
   for (const d of debts) {
     if (d.isManuallySet) {
-      d.amount = Math.min(d.amount, d.totalBalance ?? d.amount, pool);
+      d.amount = Math.min(d.amount, Math.max(0, d.totalBalance ?? 0), pool);
       d.amount = Math.max(0, d.amount);
       pool -= d.amount;
     } else {
@@ -114,7 +116,7 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
   }
   for (const s of savings) {
     if (s.isLocked) {
-      s.weeklyContribution = Math.min(pool, s.weeklyContribution);
+      s.weeklyContribution = Math.min(pool, s.weeklyContribution || 0);
       pool -= s.weeklyContribution;
     } else {
       s.weeklyContribution = 0;

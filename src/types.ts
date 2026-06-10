@@ -2,6 +2,7 @@ export interface BudgetElement {
   id: string;
   name: string;
   amount: number;
+  frequency?: "weekly" | "monthly"; // expenses only; undefined = weekly
   totalBalance?: number;
   originalBalance?: number;
   category: string;

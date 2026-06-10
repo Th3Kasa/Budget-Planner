@@ -15,6 +15,7 @@ export interface ShiftFields {
 export interface NewItemFields {
   name: string;
   amount: string;
+  frequency: "weekly" | "monthly"; // expenses only
   targetAmount: string;
   currentAmount: string;
   totalBalance: string;
@@ -41,6 +42,7 @@ const DAYS = [
 export const emptyItemFields = (): NewItemFields => ({
   name: "",
   amount: "",
+  frequency: "weekly",
   targetAmount: "",
   currentAmount: "",
   totalBalance: "",
@@ -100,7 +102,8 @@ export default function AddItemModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!item.name) return;
-    if (itemType !== "income" && !item.amount) return;
+    // Savings goals don't require a weekly contribution (engine auto-allocates)
+    if (itemType !== "income" && itemType !== "savings" && !item.amount) return;
     if (itemType === "income") {
       if (item.type === "fixed" && !item.amount) return;
       if (
@@ -280,22 +283,55 @@ export default function AddItemModal({
             </>
           ) : (
             <>
+              {itemType === "expense" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Payment Frequency
+                  </label>
+                  <div className="flex rounded-xl overflow-hidden border border-gray-200">
+                    {(["weekly", "monthly"] as const).map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => set({ frequency: f })}
+                        className={`flex-1 py-2 text-sm font-semibold transition ${
+                          item.frequency === f
+                            ? "bg-indigo-600 text-white"
+                            : "bg-white text-gray-600 hover:bg-gray-50"
+                        }`}
+                      >
+                        {f.charAt(0).toUpperCase() + f.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   {itemType === "savings"
                     ? "Weekly Contribution ($)"
-                    : "Weekly Amount ($)"}
+                    : itemType === "expense"
+                      ? `${item.frequency === "monthly" ? "Monthly" : "Weekly"} Amount ($)`
+                      : "Weekly Amount ($)"}
+                  {itemType === "savings" && (
+                    <span className="text-gray-400 font-normal ml-1">(Optional — auto-allocated if blank)</span>
+                  )}
                 </label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
-                  required
+                  required={itemType !== "savings"}
                   value={item.amount}
                   onChange={(e) => set({ amount: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="0.00"
                 />
+                {itemType === "expense" && item.frequency === "monthly" && item.amount && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    ≈ ${(Number(item.amount) / (52 / 12)).toFixed(2)}/wk in budget
+                  </p>
+                )}
               </div>
               {itemType === "debt" && (
                 <div>

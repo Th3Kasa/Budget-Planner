@@ -336,7 +336,11 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  const totalExpenses = state.expenses.reduce((acc, el) => acc + el.amount, 0);
+  const totalExpenses = state.expenses.reduce(
+    (acc, el) =>
+      acc + (el.frequency === "monthly" ? el.amount / (52 / 12) : el.amount),
+    0,
+  );
   const totalDebts = state.debts.reduce((acc, el) => acc + el.amount, 0);
   const totalSavingsCont = state.savings.reduce(
     (acc, el) => acc + el.weeklyContribution,
@@ -367,6 +371,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       amount: String(
         (type === "savings" ? anyItem.weeklyContribution : anyItem.amount) ?? "",
       ),
+      frequency: anyItem.frequency || "weekly",
       targetAmount: String(anyItem.targetAmount || ""),
       currentAmount: String(anyItem.currentAmount || ""),
       totalBalance: String(anyItem.originalBalance || anyItem.totalBalance || ""),
@@ -404,6 +409,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         id: editingItemId || Date.now().toString(),
         name: fields.name,
         amount: Number(fields.amount),
+        frequency: !isDebt ? (fields.frequency || "weekly") : undefined,
         totalBalance:
           isDebt && fields.totalBalance ? Number(fields.totalBalance) : undefined,
         originalBalance:
@@ -432,6 +438,10 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       });
     } else if (newItemType === "savings") {
       const tier = (Number(fields.priorityTier) || 3) as 1 | 2 | 3;
+      // Only lock the goal if the user explicitly set a weekly contribution.
+      // Leaving it blank lets the engine auto-allocate based on tiers/weights.
+      const manualContribution = Number(fields.amount) || 0;
+      const lockGoal = manualContribution > 0;
       setState((prev) => {
         if (editingItemId) {
           const nextState = {
@@ -441,11 +451,11 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                 ? {
                     ...item,
                     name: fields.name,
-                    targetAmount:
-                      Number(fields.targetAmount) || Number(fields.amount) * 52,
+                    targetAmount: Number(fields.targetAmount) || 0,
                     currentAmount: Number(fields.currentAmount) || 0,
-                    weeklyContribution: Number(fields.amount),
-                    isLocked: true,
+                    ...(lockGoal
+                      ? { weeklyContribution: manualContribution, isLocked: true }
+                      : { isLocked: false }),
                     priorityTier: tier,
                   }
                 : item,
@@ -456,11 +466,11 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         const newGoal: SavingsGoal = {
           id: Date.now().toString(),
           name: fields.name,
-          targetAmount: Number(fields.targetAmount) || Number(fields.amount) * 52,
+          targetAmount: Number(fields.targetAmount) || 0,
           currentAmount: Number(fields.currentAmount) || 0,
-          weeklyContribution: Number(fields.amount),
+          weeklyContribution: manualContribution,
           color: GOAL_COLORS[prev.savings.length % GOAL_COLORS.length],
-          isLocked: true,
+          isLocked: lockGoal,
           priorityTier: tier,
         };
         return calculateAutoAllocation({
@@ -636,6 +646,30 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     );
   };
 
+  const lockSavingsGoal = (id: string, amount: number) => {
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        savings: prev.savings.map((s) =>
+          s.id === id
+            ? { ...s, weeklyContribution: Math.max(0, amount), isLocked: true }
+            : s,
+        ),
+      }),
+    );
+  };
+
+  const unlockSavingsGoal = (id: string) => {
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        savings: prev.savings.map((s) =>
+          s.id === id ? { ...s, isLocked: false } : s,
+        ),
+      }),
+    );
+  };
+
   const handleAllocateFromVault = (goalId: string, amount: number) => {
     setState((prev) => ({
       ...prev,
@@ -776,6 +810,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onUpdateSavingsWeight={updateSavingsWeight}
               onResetSavingsWeight={resetSavingsWeight}
               onRecalculateSavings={recalculateAllSavings}
+              onLockSavingsGoal={lockSavingsGoal}
+              onUnlockSavingsGoal={unlockSavingsGoal}
             />
           )}
 

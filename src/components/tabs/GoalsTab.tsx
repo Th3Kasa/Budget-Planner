@@ -18,6 +18,8 @@ interface GoalsTabProps {
   onUpdateSavingsWeight: (id: string, weight: number) => void;
   onResetSavingsWeight: (id: string) => void;
   onRecalculateSavings: () => void;
+  onLockSavingsGoal: (id: string, amount: number) => void;
+  onUnlockSavingsGoal: (id: string) => void;
 }
 
 export default function GoalsTab({
@@ -30,11 +32,15 @@ export default function GoalsTab({
   onUpdateSavingsWeight,
   onResetSavingsWeight,
   onRecalculateSavings,
+  onLockSavingsGoal,
+  onUnlockSavingsGoal,
 }: GoalsTabProps) {
   const [allocatingGoalId, setAllocatingGoalId] = useState<string | null>(null);
   const [allocationAmount, setAllocationAmount] = useState("");
   const [editingWeightId, setEditingWeightId] = useState<string | null>(null);
   const [editingWeightValue, setEditingWeightValue] = useState("");
+  const [editingContribId, setEditingContribId] = useState<string | null>(null);
+  const [editingContribValue, setEditingContribValue] = useState("");
 
   // Compute each unlocked goal's effective allocation % accounting for priority tiers:
   //   P1 goals active  → P1 goals share 70%; all others share 30%
@@ -233,9 +239,65 @@ export default function GoalsTab({
                           )}
                         </div>
                         <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                          <p className="text-xs text-gray-500">
-                            ${money(s.weeklyContribution || 0)}/wk auto
-                          </p>
+                          {/* Inline weekly contribution editor */}
+                          {editingContribId === s.id ? (
+                            <span className="flex items-center gap-0.5">
+                              <span className="text-xs text-gray-500">$</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                autoFocus
+                                value={editingContribValue}
+                                onChange={(e) => setEditingContribValue(e.target.value)}
+                                onBlur={() => {
+                                  const v = Number(editingContribValue);
+                                  if (editingContribValue !== "" && !isNaN(v) && v >= 0) {
+                                    if (v === 0) onUnlockSavingsGoal(s.id);
+                                    else onLockSavingsGoal(s.id, v);
+                                  }
+                                  setEditingContribId(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") e.currentTarget.blur();
+                                  else if (e.key === "Escape") setEditingContribId(null);
+                                }}
+                                className="text-xs font-bold bg-transparent border-b border-indigo-500 outline-none w-14 text-center"
+                              />
+                              <span className="text-xs text-gray-500">/wk</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingContribId(s.id);
+                                setEditingContribValue(
+                                  s.weeklyContribution
+                                    ? s.weeklyContribution.toFixed(2)
+                                    : "",
+                                );
+                              }}
+                              className={`text-xs font-semibold px-1.5 py-0.5 rounded transition-colors ${
+                                s.isLocked
+                                  ? "text-amber-700 bg-amber-50 hover:bg-amber-100"
+                                  : "text-gray-500 bg-transparent hover:bg-gray-100"
+                              }`}
+                              title={s.isLocked ? "Manually locked — click to edit" : "Click to lock a specific amount"}
+                            >
+                              ${money(s.weeklyContribution || 0)}/wk
+                              {s.isLocked ? " 🔒" : " auto"}
+                            </button>
+                          )}
+                          {s.isLocked && editingContribId !== s.id && (
+                            <button
+                              type="button"
+                              onClick={() => onUnlockSavingsGoal(s.id)}
+                              className="p-0.5 text-gray-400 hover:text-indigo-600 transition-colors"
+                              title="Unlock — let engine auto-allocate"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                            </button>
+                          )}
                           {!s.isLocked && (
                             <>
                               <span className="text-gray-300">·</span>
