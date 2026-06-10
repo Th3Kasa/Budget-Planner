@@ -348,9 +348,8 @@ export default function SettingsTab({
             </button>
           </div>
           <p className="text-[11px] text-gray-400 mt-3">
-            The CSV includes incomes, expenses, debts, goals, windfalls,
-            calendar events, and a weekly summary. Reset restores the default
-            sample budget.
+            The CSV includes incomes, expenses, debts, goals, windfalls, and a
+            weekly summary. Reset restores the default sample budget.
           </p>
         </div>
 
