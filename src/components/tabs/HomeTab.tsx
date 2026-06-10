@@ -3,15 +3,31 @@ import {
   Briefcase,
   CircleDollarSign,
   Edit2,
-  Lock,
+  GripVertical,
   Plus,
   Receipt,
-  Sparkles,
+  RotateCcw,
   Trash2,
   TrendingUp,
   Wallet,
   X,
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   PieChart as RechartsPieChart,
   Pie,
@@ -46,10 +62,44 @@ interface HomeTabProps {
   onRemoveIncome: (id: string) => void;
   onRemoveItem: (collection: "expenses" | "debts" | "savings", id: string) => void;
   onPayDebt: (id: string) => void;
-  onAutoAllocate: () => void;
+  onReorderExpenses: (activeId: string, overId: string) => void;
+  onReorderDebts: (activeId: string, overId: string) => void;
+  onUpdateDebtAmount: (id: string, amount: number) => void;
+  onResetDebtAllocation: (id: string) => void;
   onRecordWindfall: (name: string, amount: number) => void;
   onAdjustVault: (newBalance: number) => void;
   onUndoWindfall: (id: string) => void;
+}
+
+type SortableHandleProps = Pick<ReturnType<typeof useSortable>, "attributes" | "listeners">;
+
+function SortableRow({
+  id,
+  children,
+}: {
+  id: string;
+  children: (handleProps: SortableHandleProps) => React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition: transition ?? "transform 200ms ease",
+    opacity: isDragging ? 0.6 : 1,
+    zIndex: isDragging ? 50 : undefined,
+    position: "relative",
+  };
+  return (
+    <div ref={setNodeRef} style={style}>
+      {children({ attributes, listeners })}
+    </div>
+  );
 }
 
 export default function HomeTab({
@@ -66,7 +116,10 @@ export default function HomeTab({
   onRemoveIncome,
   onRemoveItem,
   onPayDebt,
-  onAutoAllocate,
+  onReorderExpenses,
+  onReorderDebts,
+  onUpdateDebtAmount: _onUpdateDebtAmount,
+  onResetDebtAllocation,
   onRecordWindfall,
   onAdjustVault,
   onUndoWindfall,
@@ -79,6 +132,11 @@ export default function HomeTab({
 
   const centrelinkEnabled = state.centrelinkEnabled !== false;
   const cashBalance = state.cashBalance || 0;
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   const chartData = [
     { name: "Expenses", value: totalExpenses, color: "#f59e0b" },
@@ -128,6 +186,9 @@ export default function HomeTab({
       className={`text-xs font-bold bg-transparent border-b border-transparent hover:border-indigo-200 focus:border-indigo-500 outline-none ${width} text-right transition-colors`}
     />
   );
+
+  const expenseIds = state.expenses.map((e) => e.id);
+  const debtIds = state.debts.map((d) => d.id);
 
   return (
     <div className="space-y-8">
@@ -395,55 +456,78 @@ export default function HomeTab({
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
                   Expenses
                 </h3>
-                {state.expenses.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between p-3 md:p-4 rounded-xl bg-white/40 border border-white/60 hover:bg-white/60 transition-colors group"
-                  >
-                    <div className="flex items-center gap-3 md:gap-4">
-                      <div
-                        className="w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center text-white shadow-sm flex-shrink-0"
-                        style={{ backgroundColor: item.color }}
-                      >
-                        {getIcon(item.icon || "")}
-                      </div>
-                      <div>
-                        <p className="text-sm md:text-base font-semibold text-gray-900 line-clamp-1">
-                          {item.name}
-                        </p>
-                        <p className="text-[10px] md:text-xs text-gray-500">
-                          {item.category}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 md:gap-4">
-                      <div className="text-right">
-                        <p className="text-sm md:text-base font-bold text-gray-900">
-                          ${item.amount.toFixed(2)}
-                        </p>
-                        <p className="text-[10px] md:text-xs text-gray-500">
-                          / week
-                        </p>
-                      </div>
-                      <div className="opacity-0 group-hover:opacity-100 flex items-center transition-opacity">
-                        <button
-                          onClick={() => onEdit("expense", item)}
-                          className="text-gray-400 hover:text-indigo-600 p-1 md:p-2 transition-colors"
-                          title="Edit item"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => onRemoveItem("expenses", item.id)}
-                          className="text-red-400 hover:text-red-600 p-1 md:p-2 transition-colors"
-                          title="Delete item"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={(e: DragEndEvent) => {
+                    const { active, over } = e;
+                    if (over && active.id !== over.id)
+                      onReorderExpenses(String(active.id), String(over.id));
+                  }}
+                >
+                  <SortableContext items={expenseIds} strategy={verticalListSortingStrategy}>
+                    {state.expenses.map((item) => (
+                      <SortableRow key={item.id} id={item.id}>
+                        {({ attributes, listeners }) => (
+                          <div className="flex items-center justify-between p-3 md:p-4 rounded-xl bg-white/40 border border-white/60 hover:bg-white/60 transition-colors group">
+                            <div className="flex items-center gap-2 md:gap-3">
+                              <button
+                                {...attributes}
+                                {...listeners}
+                                className="cursor-grab active:cursor-grabbing p-1 -ml-1 text-gray-300 hover:text-gray-500 touch-none flex-shrink-0"
+                                aria-label="Drag to reorder"
+                              >
+                                <GripVertical className="w-4 h-4" />
+                              </button>
+                              <div className="flex items-center gap-3 md:gap-4">
+                                <div
+                                  className="w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center text-white shadow-sm flex-shrink-0"
+                                  style={{ backgroundColor: item.color }}
+                                >
+                                  {getIcon(item.icon || "")}
+                                </div>
+                                <div>
+                                  <p className="text-sm md:text-base font-semibold text-gray-900 line-clamp-1">
+                                    {item.name}
+                                  </p>
+                                  <p className="text-[10px] md:text-xs text-gray-500">
+                                    {item.category}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 md:gap-4">
+                              <div className="text-right">
+                                <p className="text-sm md:text-base font-bold text-gray-900">
+                                  ${item.amount.toFixed(2)}
+                                </p>
+                                <p className="text-[10px] md:text-xs text-gray-500">
+                                  / week
+                                </p>
+                              </div>
+                              <div className="opacity-0 group-hover:opacity-100 flex items-center transition-opacity">
+                                <button
+                                  onClick={() => onEdit("expense", item)}
+                                  className="text-gray-400 hover:text-indigo-600 p-1 md:p-2 transition-colors"
+                                  title="Edit item"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => onRemoveItem("expenses", item.id)}
+                                  className="text-red-400 hover:text-red-600 p-1 md:p-2 transition-colors"
+                                  title="Delete item"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </SortableRow>
+                    ))}
+                  </SortableContext>
+                </DndContext>
               </div>
             )}
 
@@ -479,94 +563,124 @@ export default function HomeTab({
                     </span>
                   )}
                 </div>
-                {state.debts.map((item) => {
-                  const original =
-                    item.originalBalance || item.totalBalance || item.amount;
-                  const current = item.totalBalance || 0;
-                  const paid = original - current;
-                  const progress =
-                    original > 0
-                      ? Math.min(100, Math.max(0, (paid / original) * 100))
-                      : 0;
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={(e: DragEndEvent) => {
+                    const { active, over } = e;
+                    if (over && active.id !== over.id)
+                      onReorderDebts(String(active.id), String(over.id));
+                  }}
+                >
+                  <SortableContext items={debtIds} strategy={verticalListSortingStrategy}>
+                    {state.debts.map((item) => {
+                      const original =
+                        item.originalBalance || item.totalBalance || item.amount;
+                      const current = item.totalBalance || 0;
+                      const paid = original - current;
+                      const progress =
+                        original > 0
+                          ? Math.min(100, Math.max(0, (paid / original) * 100))
+                          : 0;
 
-                  return (
-                    <div
-                      key={item.id}
-                      className="flex flex-col p-4 md:p-5 rounded-2xl bg-white/40 border border-white/60 hover:bg-white/60 transition-colors group relative"
-                    >
-                      <div className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 flex items-center gap-2 transition-opacity">
-                        <button
-                          onClick={() => onEdit("debt", item)}
-                          className="text-gray-400 hover:text-indigo-600 transition-colors"
-                          title="Edit item"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => onRemoveItem("debts", item.id)}
-                          className="text-red-400 hover:text-red-600 transition-colors"
-                          title="Delete item"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                      return (
+                        <SortableRow key={item.id} id={item.id}>
+                          {({ attributes, listeners }) => (
+                            <div className="flex flex-col p-4 md:p-5 rounded-2xl bg-white/40 border border-white/60 hover:bg-white/60 transition-colors group relative">
+                              <div className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 flex items-center gap-2 transition-opacity">
+                                {item.isManuallySet && (
+                                  <button
+                                    onClick={() => onResetDebtAllocation(item.id)}
+                                    className="p-1.5 text-gray-400 bg-gray-50 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition-colors"
+                                    aria-label="Reset to automatic allocation"
+                                    title="Reset to automatic allocation"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => onEdit("debt", item)}
+                                  className="text-gray-400 hover:text-indigo-600 transition-colors"
+                                  title="Edit item"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => onRemoveItem("debts", item.id)}
+                                  className="text-red-400 hover:text-red-600 transition-colors"
+                                  title="Delete item"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
 
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="w-10 h-10 rounded-full flex items-center justify-center text-white shadow-sm flex-shrink-0"
-                            style={{ backgroundColor: item.color }}
-                          >
-                            {getIcon(item.icon || "credit-card")}
-                          </div>
-                          <div>
-                            <h3 className="font-bold text-gray-900 line-clamp-1">
-                              {item.name}
-                            </h3>
-                            <p className="text-xs text-gray-500 flex items-center gap-1">
-                              {item.isLocked && (
-                                <Lock className="w-3 h-3 text-indigo-500" />
-                              )}
-                              ${item.amount.toFixed(2)}/wk repayment
-                              {item.amount > 0 && current > 0 && (
-                                <span>
-                                  {" "}
-                                  • {Math.ceil(current / item.amount)} weeks left
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-2 mt-1 mr-6">
-                          <div className="text-right">
-                            <span className="text-sm font-bold text-gray-900 block">
-                              ${money(current)} left
-                            </span>
-                          </div>
-                          <button
-                            onClick={() => onPayDebt(item.id)}
-                            className="text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-700 hover:bg-red-200 px-2 flex-shrink-0 py-1 rounded-md transition-colors flex items-center gap-1"
-                          >
-                            <Plus className="w-3 h-3" /> Pay
-                          </button>
-                        </div>
-                      </div>
-                      <div className="w-full bg-gray-100 rounded-full h-2.5 mb-2 overflow-hidden shadow-inner">
-                        <div
-                          className="h-2.5 rounded-full transition-all duration-1000 ease-out"
-                          style={{
-                            width: `${progress}%`,
-                            backgroundColor: item.color || "#ef4444",
-                          }}
-                        ></div>
-                      </div>
-                      <div className="flex justify-between text-[11px] font-medium text-gray-500">
-                        <span>{progress.toFixed(0)}% paid</span>
-                        <span>${money(paid)} paid back</span>
-                      </div>
-                    </div>
-                  );
-                })}
+                              <div className="flex justify-between items-start mb-4">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    {...attributes}
+                                    {...listeners}
+                                    className="cursor-grab active:cursor-grabbing p-1 text-gray-300 hover:text-gray-500 touch-none flex-shrink-0"
+                                    aria-label="Drag to reorder"
+                                  >
+                                    <GripVertical className="w-4 h-4" />
+                                  </button>
+                                  <div className="flex items-center gap-3">
+                                    <div
+                                      className="w-10 h-10 rounded-full flex items-center justify-center text-white shadow-sm flex-shrink-0"
+                                      style={{ backgroundColor: item.color }}
+                                    >
+                                      {getIcon(item.icon || "credit-card")}
+                                    </div>
+                                    <div>
+                                      <h3 className="font-bold text-gray-900 line-clamp-1">
+                                        {item.name}
+                                      </h3>
+                                      <p className="text-xs text-gray-500 flex items-center gap-1">
+                                        ${item.amount.toFixed(2)}/wk repayment
+                                        {item.amount > 0 && current > 0 && (
+                                          <span>
+                                            {" "}
+                                            • {Math.ceil(current / item.amount)} weeks left
+                                          </span>
+                                        )}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-end gap-2 mt-1 mr-6">
+                                  <div className="text-right">
+                                    <span className="text-sm font-bold text-gray-900 block">
+                                      ${money(current)} left
+                                    </span>
+                                  </div>
+                                  <button
+                                    onClick={() => onPayDebt(item.id)}
+                                    className="text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-700 hover:bg-red-200 px-2 flex-shrink-0 py-1 rounded-md transition-colors flex items-center gap-1"
+                                  >
+                                    <Plus className="w-3 h-3" /> Pay
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="w-full bg-gray-100 rounded-full h-2.5 mb-2 overflow-hidden shadow-inner">
+                                <div
+                                  className="h-2.5 rounded-full transition-all duration-1000 ease-out"
+                                  style={{
+                                    width: `${progress}%`,
+                                    backgroundColor: item.color || "#ef4444",
+                                  }}
+                                ></div>
+                              </div>
+                              <div className="flex justify-between text-[11px] font-medium text-gray-500">
+                                <span>{progress.toFixed(0)}% paid</span>
+                                <span>${money(paid)} paid back</span>
+                              </div>
+                            </div>
+                          )}
+                        </SortableRow>
+                      );
+                    })}
+                  </SortableContext>
+                </DndContext>
               </div>
             )}
             {state.expenses.length === 0 && state.debts.length === 0 && (
@@ -787,13 +901,6 @@ export default function HomeTab({
             <h2 className="text-base md:text-lg font-bold text-gray-900">
               Allocation Analytics
             </h2>
-            <button
-              onClick={onAutoAllocate}
-              className="flex items-center gap-1 text-xs md:text-sm text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg font-medium transition-colors"
-            >
-              <Sparkles className="w-4 h-4" />
-              Auto-Allocate
-            </button>
           </div>
           <div className="flex-1 min-h-0 relative -ml-4">
             {chartData.length > 0 ? (

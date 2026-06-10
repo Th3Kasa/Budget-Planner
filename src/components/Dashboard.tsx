@@ -367,12 +367,14 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           [collectionName]: editingItemId
             ? prev[collectionName].map((item) =>
                 item.id === editingItemId
-                  ? // Manually modified amounts are locked so
-                    // auto-allocation won't overwrite them.
-                    { ...itemToSave, color: item.color, icon: item.icon, isLocked: true }
+                  ? isDebt
+                    ? { ...itemToSave, color: item.color, icon: item.icon, isManuallySet: true }
+                    : { ...itemToSave, color: item.color, icon: item.icon }
                   : item,
               )
-            : [...prev[collectionName], { ...itemToSave, isLocked: true }],
+            : isDebt
+              ? [...prev[collectionName], { ...itemToSave, isManuallySet: true }]
+              : [...prev[collectionName], itemToSave],
         };
         return calculateAutoAllocation(nextState);
       });
@@ -490,13 +492,40 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     }));
   };
 
-  const handleAutoAllocate = () => {
+  const reorderItems = (
+    type: "expenses" | "debts",
+    activeId: string,
+    overId: string,
+  ) => {
+    setState((prev) => {
+      const items = [...prev[type]];
+      const oldIndex = items.findIndex((i) => i.id === activeId);
+      const newIndex = items.findIndex((i) => i.id === overId);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      const [moved] = items.splice(oldIndex, 1);
+      items.splice(newIndex, 0, moved);
+      return { ...prev, [type]: items };
+    });
+  };
+
+  const updateDebtAmount = (id: string, amount: number) => {
     setState((prev) =>
-      // Explicit Auto-Allocate releases all manual locks first.
       calculateAutoAllocation({
         ...prev,
-        debts: prev.debts.map((d) => ({ ...d, isLocked: false })),
-        savings: prev.savings.map((s) => ({ ...s, isLocked: false })),
+        debts: prev.debts.map((d) =>
+          d.id === id ? { ...d, amount: Math.max(0, amount), isManuallySet: true } : d,
+        ),
+      }),
+    );
+  };
+
+  const resetDebtAllocation = (id: string) => {
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        debts: prev.debts.map((d) =>
+          d.id === id ? { ...d, isManuallySet: false } : d,
+        ),
       }),
     );
   };
@@ -644,7 +673,10 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onRemoveIncome={removeIncome}
               onRemoveItem={removeItem}
               onPayDebt={payDebt}
-              onAutoAllocate={handleAutoAllocate}
+              onReorderExpenses={(a, b) => reorderItems("expenses", a, b)}
+              onReorderDebts={(a, b) => reorderItems("debts", a, b)}
+              onUpdateDebtAmount={updateDebtAmount}
+              onResetDebtAllocation={resetDebtAllocation}
               onRecordWindfall={handleRecordWindfall}
               onAdjustVault={handleAdjustVault}
               onUndoWindfall={handleUndoWindfall}
