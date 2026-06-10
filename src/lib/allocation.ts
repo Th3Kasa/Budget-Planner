@@ -1,129 +1,78 @@
 import { BudgetState, BudgetElement, SavingsGoal, Windfall } from "../types";
 import { summarizeIncome } from "./income";
 
-// Priority waterfall (shared by weekly auto-allocation and windfalls):
-//   1. Locked items keep their manual amounts
-//   2. Car loan
-//   3. Buy-now-pay-later debts (Zip, Afterpay) split equally
-//   4. Family ("mama") debts
-//   5. Any other debts split equally
-//   6. 90% business goal / 10% emergency fund
-//   7. Remaining savings goals split equally
-
-const BNPL_NAMES = [
-  "zip money",
-  "zip pay",
-  "after pay",
-  "zipmoney",
-  "zippay",
-  "afterpay",
-];
-
-const nameMatches = (name: string, needles: string[]) =>
-  needles.some((n) => name.toLowerCase().includes(n));
-
-interface Sink {
-  cap: number; // most this target can still absorb
-  add: (amt: number) => void;
-}
-
-// Pour `pool` into one sink, respecting its cap. Returns what's left.
-function fillOne(sink: Sink, pool: number): number {
-  const amt = Math.min(sink.cap, pool);
-  if (amt > 0) {
-    sink.add(amt);
-    sink.cap -= amt;
-  }
-  return pool - amt;
-}
-
-// Split `pool` equally across sinks; when one hits its cap, redistribute
-// the remainder among the rest. Returns what's left unspent.
-function fillEqually(sinks: Sink[], pool: number): number {
-  let open = sinks.filter((s) => s.cap > 0.01);
-  while (open.length > 0 && pool > 0.01) {
-    const split = pool / open.length;
-    for (const s of open) {
-      const amt = Math.min(split, s.cap);
-      s.add(amt);
-      s.cap -= amt;
-      pool -= amt;
+// Distribute `pool` across `items` proportional to `weight(item)`,
+// capping each item at `cap(item)`. When an item hits its cap, its
+// unused share is redistributed among the rest. Returns leftover pool.
+function splitProportional(
+  items: BudgetElement[],
+  pool: number,
+  weight: (d: BudgetElement) => number,
+  cap: (d: BudgetElement) => number,
+  assign: (d: BudgetElement, amt: number) => void,
+): number {
+  let remaining = items.filter((d) => cap(d) > 0.01 && weight(d) > 0);
+  while (remaining.length > 0 && pool > 0.01) {
+    const totalWeight = remaining.reduce((s, d) => s + weight(d), 0);
+    if (totalWeight <= 0) break;
+    let spent = 0;
+    const nextRemaining: BudgetElement[] = [];
+    for (const d of remaining) {
+      const share = (weight(d) / totalWeight) * pool;
+      const actual = Math.min(share, cap(d));
+      if (actual > 0.001) assign(d, actual);
+      spent += actual;
+      if (cap(d) > 0.01) nextRemaining.push(d);
     }
-    // Each round either retires a capped sink or fully drains the pool,
-    // so this always terminates.
-    open = open.filter((s) => s.cap > 0.01);
+    pool -= spent;
+    remaining = nextRemaining;
+    if (spent < 0.001) break;
   }
   return Math.max(0, pool);
 }
 
-// Runs the priority waterfall over a pool of money.
-// The debt/goal sink factories decide what "absorbing money" means
-// (weekly repayment amounts vs. actual balance reductions).
-function runWaterfall(
+// Split `pool` equally across unlocked savings goals, capping each at the
+// gap left to its target. Returns leftover pool.
+function fillSavingsEqually(
+  goals: SavingsGoal[],
   pool: number,
-  debts: BudgetElement[],
-  savings: SavingsGoal[],
-  debtSink: (d: BudgetElement) => Sink,
-  goalSink: (s: SavingsGoal) => Sink,
+  gap: (s: SavingsGoal) => number,
+  assign: (s: SavingsGoal, amt: number) => void,
 ): number {
-  const unlockedDebts = debts.filter((d) => !d.isLocked);
-
-  for (const d of unlockedDebts.filter((d) => nameMatches(d.name, ["car"]))) {
-    pool = fillOne(debtSink(d), pool);
+  let open = goals.filter((s) => gap(s) > 0.01);
+  while (open.length > 0 && pool > 0.01) {
+    const split = pool / open.length;
+    for (const s of open) {
+      const amt = Math.min(split, gap(s));
+      if (amt > 0.001) assign(s, amt);
+      pool -= amt;
+    }
+    open = open.filter((s) => gap(s) > 0.01);
   }
-
-  pool = fillEqually(
-    unlockedDebts
-      .filter((d) => nameMatches(d.name, BNPL_NAMES))
-      .map(debtSink),
-    pool,
-  );
-
-  for (const d of unlockedDebts.filter((d) => nameMatches(d.name, ["mama"]))) {
-    pool = fillOne(debtSink(d), pool);
-  }
-
-  // Anything still owing that the named priorities didn't cover.
-  pool = fillEqually(unlockedDebts.map(debtSink), pool);
-
-  // 90% business / 10% emergency. Each side works independently and any
-  // unspent share returns to the pool (this previously double-counted).
-  if (pool > 0.01) {
-    const business = savings.filter(
-      (s) => !s.isLocked && nameMatches(s.name, ["business"]),
-    );
-    const emergency = savings.filter(
-      (s) => !s.isLocked && nameMatches(s.name, ["emergency"]),
-    );
-    let businessPool = pool * 0.9;
-    let emergencyPool = pool * 0.1;
-    businessPool = fillEqually(business.map(goalSink), businessPool);
-    emergencyPool = fillEqually(emergency.map(goalSink), emergencyPool);
-    pool = businessPool + emergencyPool;
-  }
-
-  pool = fillEqually(
-    savings.filter((s) => !s.isLocked).map(goalSink),
-    pool,
-  );
-
-  return pool;
+  return Math.max(0, pool);
 }
 
-// Distributes weekly surplus (net income minus expenses) across debt
-// repayments and savings contributions. Locked items keep their amounts.
+// Distributes the weekly surplus (net income minus expenses) across debt
+// repayments and savings contributions. Debts the user manually edited
+// keep their amounts; the rest share the pool proportional to their
+// outstanding balances.
 export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
   const debts = prevState.debts.map((d) => ({ ...d }));
   const savings = prevState.savings.map((s) => ({ ...s }));
 
   const { totalNetIncome } = summarizeIncome(prevState);
-  let pool =
-    totalNetIncome - prevState.expenses.reduce((acc, el) => acc + el.amount, 0);
-  if (pool < 0) pool = 0;
+  const totalExpenses = prevState.expenses.reduce(
+    (acc, el) => acc + el.amount,
+    0,
+  );
+  let pool = Math.max(0, totalNetIncome - totalExpenses);
 
+  // Manually-set debts and locked savings keep their amounts (capped by
+  // the pool so we never allocate money that doesn't exist).
   for (const d of debts) {
-    if (d.isLocked) {
-      d.amount = Math.min(pool, d.amount);
+    if (d.isManuallySet) {
+      d.amount = Math.min(d.amount, d.totalBalance ?? d.amount, pool);
+      d.amount = Math.max(0, d.amount);
       pool -= d.amount;
     } else {
       d.amount = 0;
@@ -138,32 +87,39 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
     }
   }
 
-  const debtSink = (d: BudgetElement): Sink => ({
-    cap: Math.max(0, (d.totalBalance ?? Infinity) - d.amount),
-    add: (amt) => {
+  // Remaining pool: auto debts share proportionally by outstanding balance.
+  pool = splitProportional(
+    debts.filter((d) => !d.isManuallySet),
+    pool,
+    (d) => Math.max(0, d.totalBalance ?? 0),
+    (d) => Math.max(0, (d.totalBalance ?? Infinity) - d.amount),
+    (d, amt) => {
       d.amount += amt;
     },
-  });
-  const goalSink = (s: SavingsGoal): Sink => ({
-    cap:
+  );
+
+  // Whatever is left flows to unlocked savings goals equally.
+  fillSavingsEqually(
+    savings.filter((s) => !s.isLocked),
+    pool,
+    (s) =>
       s.targetAmount > 0
         ? Math.max(
             0,
             s.targetAmount - (s.currentAmount || 0) - s.weeklyContribution,
           )
         : Infinity,
-    add: (amt) => {
+    (s, amt) => {
       s.weeklyContribution += amt;
     },
-  });
-
-  runWaterfall(pool, debts, savings, debtSink, goalSink);
+  );
 
   return { ...prevState, debts, savings };
 }
 
-// Distributes a one-off cash windfall down the same priority list, but
-// against actual balances. Whatever is left lands in the Cash Vault.
+// Distributes a one-off cash windfall against actual balances: debts
+// proportionally by balance, then savings equally by remaining gap.
+// Whatever is left lands in the Cash Vault.
 export function distributeWindfall(
   prevState: BudgetState,
   name: string,
@@ -185,30 +141,28 @@ export function distributeWindfall(
     else distributions.push({ type, id, name: itemName, amount: amt });
   };
 
-  const debtSink = (d: BudgetElement): Sink => ({
-    cap: Math.max(0, d.totalBalance || 0),
-    add: (amt) => {
-      d.totalBalance = Math.max(0, (d.totalBalance || 0) - amt);
+  let pool = splitProportional(
+    debts,
+    amount,
+    (d) => Math.max(0, d.totalBalance ?? 0),
+    (d) => Math.max(0, d.totalBalance ?? 0),
+    (d, amt) => {
+      d.totalBalance = Math.max(0, (d.totalBalance ?? 0) - amt);
       record("debt", d.id, d.name, amt);
     },
-  });
-  const goalSink = (s: SavingsGoal): Sink => ({
-    cap:
+  );
+
+  pool = fillSavingsEqually(
+    savings,
+    pool,
+    (s) =>
       s.targetAmount > 0
         ? Math.max(0, s.targetAmount - (s.currentAmount || 0))
         : Infinity,
-    add: (amt) => {
+    (s, amt) => {
       s.currentAmount = (s.currentAmount || 0) + amt;
       record("savings", s.id, s.name, amt);
     },
-  });
-
-  const unallocatedCash = runWaterfall(
-    amount,
-    debts,
-    savings,
-    debtSink,
-    goalSink,
   );
 
   const windfall: Windfall = {
@@ -217,14 +171,14 @@ export function distributeWindfall(
     sourceAmount: amount,
     date: Date.now(),
     distributions,
-    unallocatedCash,
+    unallocatedCash: pool,
   };
 
   return calculateAutoAllocation({
     ...prevState,
     debts,
     savings,
-    cashBalance: (prevState.cashBalance || 0) + unallocatedCash,
+    cashBalance: (prevState.cashBalance || 0) + pool,
     windfalls: [...(prevState.windfalls || []), windfall],
   });
 }
@@ -244,7 +198,8 @@ export function undoWindfall(prevState: BudgetState, id: string): BudgetState {
       if (d) d.totalBalance = (d.totalBalance || 0) + dist.amount;
     } else {
       const s = savings.find((x) => x.id === dist.id);
-      if (s) s.currentAmount = Math.max(0, (s.currentAmount || 0) - dist.amount);
+      if (s)
+        s.currentAmount = Math.max(0, (s.currentAmount || 0) - dist.amount);
     }
   }
 

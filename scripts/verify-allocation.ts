@@ -54,7 +54,24 @@ const base: BudgetState = {
   check("full goals receive nothing (no phantom money)", approx(allocated, 0), `allocated=${allocated.toFixed(2)}`);
 }
 
-// --- Test 3: windfall conserves money: distributions + vault == source ---
+// --- Test 3 (updated): windfall fills debts proportionally by balance ---
+// base has car $5000 and zip $40 balance; windfall of $2520 splits proportionally:
+// car gets 5000/5040 * 2520 = 2500, zip gets 40/5040 * 2520 ≈ 20.
+// Neither cap is hit (car<5000, zip<40), so pure proportional split applies.
+{
+  const out = distributeWindfall(base, "Sold Bike", 2520);
+  const wf = out.windfalls![0];
+  const car = out.debts.find((d) => d.id === "car")!;
+  const zip = out.debts.find((d) => d.id === "zip")!;
+  const carPaid = 5000 - car.totalBalance!;
+  const zipPaid = 40 - zip.totalBalance!;
+  check("windfall conserves money", approx(carPaid + zipPaid + wf.unallocatedCash, 2520), `carPaid=${carPaid.toFixed(2)} zipPaid=${zipPaid.toFixed(2)} vault=${wf.unallocatedCash.toFixed(2)}`);
+  // With $2520 windfall, proportional split: car=2500, zip=20 (zip's share < its $40 cap)
+  check("car gets proportional share (5000/5040 * 2520 ≈ 2500)", approx(carPaid, 2500, 1), `carPaid=${carPaid.toFixed(2)}`);
+  check("zip gets proportional share (40/5040 * 2520 ≈ 20)", approx(zipPaid, 20, 1), `zipPaid=${zipPaid.toFixed(2)}`);
+}
+
+// Additional conservation check: $6000 windfall fully pays both debts ($5040), rest goes to savings/vault
 {
   const out = distributeWindfall(base, "Sold Bike", 6000);
   const wf = out.windfalls![0];
@@ -62,8 +79,8 @@ const base: BudgetState = {
   check("windfall distributions + vault == source", approx(distributed + wf.unallocatedCash, 6000), `dist=${distributed.toFixed(2)} vault=${wf.unallocatedCash.toFixed(2)}`);
   const car = out.debts.find((d) => d.id === "car")!;
   const zip = out.debts.find((d) => d.id === "zip")!;
-  check("car loan paid first", approx(car.totalBalance!, 0), `car=${car.totalBalance!.toFixed(2)}`);
-  check("zip paid next", approx(zip.totalBalance!, 0), `zip=${zip.totalBalance!.toFixed(2)}`);
+  check("$6000 windfall fully pays car (both debts cap, remainder to savings)", approx(car.totalBalance!, 0), `car=${car.totalBalance!.toFixed(2)}`);
+  check("$6000 windfall fully pays zip", approx(zip.totalBalance!, 0), `zip=${zip.totalBalance!.toFixed(2)}`);
 }
 
 // --- Test 4: windfall works with ONLY an emergency goal (old code skipped it) ---
@@ -90,14 +107,24 @@ const base: BudgetState = {
   check("undo restores savings", approx(undone.savings.reduce((a, s) => a + (s.currentAmount || 0), 0), 0));
 }
 
-// --- Test 6: locked items respected ---
+// --- Test 6 (updated): manually-set debt keeps its amount; others rebalance proportionally ---
 {
-  const locked: BudgetState = {
+  const manual: BudgetState = {
     ...base,
-    debts: [{ id: "car", name: "Car Loan", amount: 200, totalBalance: 5000, originalBalance: 6000, category: "Debt", isLocked: true }],
+    debts: [
+      { id: "car", name: "Car Loan", amount: 200, totalBalance: 5000, originalBalance: 6000, category: "Debt", isManuallySet: true },
+      { id: "zip", name: "ZipPay", amount: 0, totalBalance: 1000, originalBalance: 1000, category: "Debt" },
+      { id: "loan", name: "Personal Loan", amount: 0, totalBalance: 3000, originalBalance: 3000, category: "Debt" },
+    ],
+    savings: [],
   };
-  const out = calculateAutoAllocation(locked);
-  check("locked debt keeps manual amount", approx(out.debts[0].amount, 200), `amount=${out.debts[0].amount.toFixed(2)}`);
+  const out = calculateAutoAllocation(manual);
+  const car = out.debts.find((d) => d.id === "car")!;
+  const zip = out.debts.find((d) => d.id === "zip")!;
+  const loan = out.debts.find((d) => d.id === "loan")!;
+  check("manual debt keeps exact amount", approx(car.amount, 200), `car=${car.amount.toFixed(2)}`);
+  // Remaining pool splits 1000:3000 = 1:3 between zip and loan
+  check("auto debts split proportionally (zip:loan = 1:3)", approx(loan.amount / Math.max(zip.amount, 0.01), 3, 0.1), `zip=${zip.amount.toFixed(2)} loan=${loan.amount.toFixed(2)}`);
 }
 
 // --- Calculator checks (annual figures verified against ATO 2025-26 / 2026-27) ---
