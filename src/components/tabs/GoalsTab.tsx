@@ -137,7 +137,7 @@ export default function GoalsTab({
                   key={s.id}
                   className="p-5 rounded-2xl bg-white/40 border border-white/60 hover:bg-white/60 transition relative group flex flex-col justify-between"
                 >
-                  <div className="absolute right-4 top-4 opacity-0 group-hover:opacity-100 flex items-center gap-1.5 transition">
+                  <div className="absolute right-4 top-4 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex items-center gap-1.5 transition">
                     <button
                       onClick={() => onEditGoal(s)}
                       className="p-1 px-1.5 bg-white shadow-sm border border-gray-100 text-gray-400 hover:text-indigo-600 rounded-lg transition"
