@@ -7,9 +7,9 @@ import {
   Target,
   Wallet,
 } from "lucide-react";
-import { doc, setDoc, onSnapshot } from "firebase/firestore";
-import { User } from "firebase/auth";
-import { db } from "../firebase";
+import { Session } from "@supabase/supabase-js";
+import { supabase } from "../lib/supabase";
+import { format, startOfWeek } from "date-fns";
 import { cn } from "../lib/utils";
 import { summarizeIncome } from "../lib/income";
 import { DEFAULT_JOBSEEKER_MAX_FORTNIGHTLY } from "../lib/calculators";
@@ -37,9 +37,7 @@ import GoalsTab from "./tabs/GoalsTab";
 import SettingsTab from "./tabs/SettingsTab";
 
 interface DashboardProps {
-  firebaseUser?: User | null;
-  onGoogleLogin?: () => void;
-  onGoogleLogout?: () => void;
+  session: Session | null;
   onLogout?: () => void;
 }
 
@@ -163,7 +161,7 @@ const TAB_COPY = {
   },
 };
 
-export default function Dashboard({ firebaseUser, onGoogleLogin, onGoogleLogout, onLogout }: DashboardProps) {
+export default function Dashboard({ session, onLogout }: DashboardProps) {
   const [state, setState] = useState<BudgetState>(loadInitialState);
   const [activeTab, setActiveTab] =
     useState<keyof typeof TAB_COPY>("home");
@@ -177,39 +175,116 @@ export default function Dashboard({ firebaseUser, onGoogleLogin, onGoogleLogout,
   );
 
   // Persist locally immediately; debounce cloud writes so inline edits
-  // don't fire a Firestore write per keystroke.
+  // don't fire a Supabase write per keystroke.
   useEffect(() => {
     localStorage.setItem("budget_state_v4", JSON.stringify(state));
-    if (!firebaseUser) return;
+    if (!session?.user) return;
     const timeout = setTimeout(() => {
-      const userDocRef = doc(db, "users", firebaseUser.uid);
-      setDoc(userDocRef, { budgetState: state }, { merge: true }).catch(
-        console.error,
-      );
+      supabase
+        .from("budgets")
+        .upsert(
+          {
+            user_id: session.user.id,
+            state,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" },
+        )
+        .then(({ error }) => {
+          if (error) console.error("Cloud sync failed:", error.message);
+        });
     }, 800);
     return () => clearTimeout(timeout);
-  }, [state, firebaseUser]);
+  }, [state, session]);
 
-  // Receive cloud updates (other devices).
+  // On first session: pull cloud state (or migrate local data up once).
+  // Then subscribe to realtime updates from other devices.
   useEffect(() => {
-    if (!firebaseUser) return;
-    const userDocRef = doc(db, "users", firebaseUser.uid);
-    const unsubscribe = onSnapshot(userDocRef, (docSnap) => {
-      if (docSnap.exists() && !docSnap.metadata.hasPendingWrites) {
-        const data = docSnap.data();
-        if (data && data.budgetState) {
-          setState((prevState) =>
-            JSON.stringify(prevState) !== JSON.stringify(data.budgetState)
-              ? data.budgetState
-              : prevState,
-          );
-        }
+    if (!session?.user) return;
+    const userId = session.user.id;
+
+    const load = async () => {
+      const { data, error } = await supabase
+        .from("budgets")
+        .select("state")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (error) {
+        console.error("Cloud load failed:", error.message);
+        return;
       }
-    });
-    return () => unsubscribe();
-  }, [firebaseUser]);
+      if (data?.state) {
+        setState((prev) =>
+          JSON.stringify(prev) !== JSON.stringify(data.state)
+            ? (data.state as BudgetState)
+            : prev,
+        );
+      }
+      // No cloud row yet: the debounced write effect above will create it
+      // from the current local state.
+    };
+    load();
+
+    const channel = supabase
+      .channel("budgets-sync")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "budgets",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const incoming = (payload.new as { state?: BudgetState })?.state;
+          if (!incoming) return;
+          setState((prev) =>
+            JSON.stringify(prev) !== JSON.stringify(incoming) ? incoming : prev,
+          );
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session]);
 
   const summary = summarizeIncome(state);
+
+  // Record one snapshot per week (Monday-based) for the debt payoff chart.
+  // ignoreDuplicates keeps the first snapshot of the week stable.
+  useEffect(() => {
+    if (!session?.user) return;
+    const weekStart = format(
+      startOfWeek(new Date(), { weekStartsOn: 1 }),
+      "yyyy-MM-dd",
+    );
+    const totalDebtBalance = state.debts.reduce(
+      (acc, d) => acc + (d.totalBalance ?? 0),
+      0,
+    );
+    const totalPaid = state.debts.reduce((acc, d) => acc + d.amount, 0);
+    supabase
+      .from("weekly_snapshots")
+      .upsert(
+        {
+          user_id: session.user.id,
+          week_starting: weekStart,
+          net_income: summary.totalNetIncome,
+          total_debt_balance: totalDebtBalance,
+          total_paid_this_week: totalPaid,
+        },
+        { onConflict: "user_id,week_starting", ignoreDuplicates: true },
+      )
+      .then(({ error }) => {
+        if (error) console.error("Snapshot write failed:", error.message);
+      });
+    // Intentionally runs only when the session is established, not on every
+    // state change — one snapshot per week is enough.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
   const totalExpenses = state.expenses.reduce((acc, el) => acc + el.amount, 0);
   const totalDebts = state.debts.reduce((acc, el) => acc + el.amount, 0);
   const totalSavingsCont = state.savings.reduce(
@@ -607,11 +682,9 @@ export default function Dashboard({ firebaseUser, onGoogleLogin, onGoogleLogout,
                 state.centrelinkMaxFortnightly ??
                 DEFAULT_JOBSEEKER_MAX_FORTNIGHTLY
               }
-              firebaseUser={firebaseUser ?? null}
+              isSyncing={!!session?.user}
               onToggleCentrelink={handleToggleCentrelink}
               onChangeCentrelinkMax={handleChangeCentrelinkMax}
-              onGoogleLogin={onGoogleLogin}
-              onGoogleLogout={onGoogleLogout}
               onExportCsv={() => downloadBudgetCsv(state)}
               onResetData={handleResetData}
             />
