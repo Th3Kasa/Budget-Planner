@@ -57,6 +57,35 @@ function fillSavingsEqually(
   return Math.max(0, pool);
 }
 
+// Tiered savings allocation:
+//   Tier 1 goals active  → tier-1 gets 70% of pool; all others share 30%
+//   No tier-1 remaining  → tier-2 goals get 100% (overflow then goes to tier-3)
+//   No tier-1 or tier-2  → tier-3 goals share pool equally
+// Within each tier, splitWeight is honoured (defaults to equal).
+function allocateSavingsTiered(
+  goals: SavingsGoal[],
+  pool: number,
+  gap: (s: SavingsGoal) => number,
+  assign: (s: SavingsGoal, amt: number) => void,
+): number {
+  const tier = (s: SavingsGoal) => s.priorityTier ?? 3;
+  const tier1 = goals.filter((s) => tier(s) === 1 && gap(s) > 0.01);
+  const tier2 = goals.filter((s) => tier(s) === 2 && gap(s) > 0.01);
+  const tier3 = goals.filter((s) => tier(s) === 3 && gap(s) > 0.01);
+
+  if (tier1.length > 0) {
+    const t1Pool = pool * 0.70;
+    const restPool = pool * 0.30;
+    const t1Leftover = fillSavingsEqually(tier1, t1Pool, gap, assign);
+    return fillSavingsEqually([...tier2, ...tier3], restPool + t1Leftover, gap, assign);
+  }
+  if (tier2.length > 0) {
+    const t2Leftover = fillSavingsEqually(tier2, pool, gap, assign);
+    return fillSavingsEqually(tier3, t2Leftover, gap, assign);
+  }
+  return fillSavingsEqually(tier3, pool, gap, assign);
+}
+
 // Distributes the weekly surplus (net income minus expenses) across debt
 // repayments and savings contributions. Debts the user manually edited
 // keep their amounts; the rest share the pool proportional to their
@@ -103,8 +132,8 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
     },
   );
 
-  // Whatever is left flows to unlocked savings goals equally.
-  fillSavingsEqually(
+    // Whatever is left flows to unlocked savings goals via tiered priority.
+  allocateSavingsTiered(
     savings.filter((s) => !s.isLocked),
     pool,
     (s) =>
@@ -178,8 +207,8 @@ export function distributeWindfall(
     },
   );
 
-  // 3. Whatever is left fills savings goals equally
-  pool = fillSavingsEqually(
+  // 3. Whatever is left fills savings goals via tiered priority
+  pool = allocateSavingsTiered(
     savings,
     pool,
     (s) =>

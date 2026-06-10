@@ -371,6 +371,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       currentAmount: String(anyItem.currentAmount || ""),
       totalBalance: String(anyItem.originalBalance || anyItem.totalBalance || ""),
       category: anyItem.category || "General",
+      priorityTier: String(anyItem.priorityTier ?? 3),
       type: anyItem.type || "casual",
       isCash: anyItem.isCash || false,
       hourlyRate: String(anyItem.hourlyRate || ""),
@@ -430,6 +431,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         return calculateAutoAllocation(nextState);
       });
     } else if (newItemType === "savings") {
+      const tier = (Number(fields.priorityTier) || 3) as 1 | 2 | 3;
       setState((prev) => {
         if (editingItemId) {
           const nextState = {
@@ -444,6 +446,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                     currentAmount: Number(fields.currentAmount) || 0,
                     weeklyContribution: Number(fields.amount),
                     isLocked: true,
+                    priorityTier: tier,
                   }
                 : item,
             ),
@@ -458,6 +461,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           weeklyContribution: Number(fields.amount),
           color: GOAL_COLORS[prev.savings.length % GOAL_COLORS.length],
           isLocked: true,
+          priorityTier: tier,
         };
         return calculateAutoAllocation({
           ...prev,

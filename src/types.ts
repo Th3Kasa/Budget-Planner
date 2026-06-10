@@ -21,6 +21,7 @@ export interface SavingsGoal {
   isLocked?: boolean;
   splitWeight?: number;         // Relative allocation weight; undefined = equal (treated as 1)
   isManuallyWeighted?: boolean; // true when user has set a custom split weight
+  priorityTier?: 1 | 2 | 3;    // 1=top (70% of pool), 2=secondary (100% after tier1 done), 3=general (equal split, default)
 }
 
 export interface Shift {

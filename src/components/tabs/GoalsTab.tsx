@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Edit2, Plus, RotateCcw, Target, Trash2, Wallet } from "lucide-react";
+import { Edit2, Plus, RotateCcw, Star, Target, Trash2, Wallet } from "lucide-react";
 import { SavingsGoal } from "../../types";
 
 const money = (v: number) =>
@@ -185,7 +185,19 @@ export default function GoalsTab({
                         <Target className="w-5 h-5 flex-shrink-0" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-gray-900 truncate">{s.name}</h3>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h3 className="font-bold text-gray-900 truncate">{s.name}</h3>
+                          {s.priorityTier === 1 && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                              <Star className="w-2.5 h-2.5" /> P1
+                            </span>
+                          )}
+                          {s.priorityTier === 2 && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-600 border border-indigo-200 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                              P2
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                           <p className="text-xs text-gray-500">
                             ${money(s.weeklyContribution || 0)}/wk auto
