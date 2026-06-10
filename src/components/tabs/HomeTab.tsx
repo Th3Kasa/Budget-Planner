@@ -966,12 +966,19 @@ export default function HomeTab({
                         </div>
                         <button
                           type="button"
-                          onClick={() =>
+                          onClick={() => {
+                            // Cap at remaining + whatever this debt already has entered,
+                            // so "Pay all" never over-allocates.
+                            const alreadyEntered = Number(debtAllocations[debt.id]) || 0;
+                            const maxPayable = Math.min(
+                              debt.totalBalance || 0,
+                              remainingToAllocate + alreadyEntered,
+                            );
                             setDebtAllocations((prev) => ({
                               ...prev,
-                              [debt.id]: (debt.totalBalance || 0).toFixed(2),
-                            }))
-                          }
+                              [debt.id]: maxPayable.toFixed(2),
+                            }));
+                          }}
                           className="text-[10px] font-bold uppercase tracking-wide text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 px-2 py-1 rounded-lg flex-shrink-0 transition-colors"
                         >
                           Pay all
