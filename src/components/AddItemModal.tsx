@@ -25,6 +25,7 @@ export interface NewItemFields {
   hoursWorked: string;
   useShifts: boolean;
   shifts: ShiftFields[];
+  priorityTier: string; // "1" | "2" | "3" — only used for savings goals
 }
 
 const DAYS = [
@@ -49,6 +50,7 @@ export const emptyItemFields = (): NewItemFields => ({
   hourlyRate: "",
   hoursWorked: "",
   useShifts: false,
+  priorityTier: "3",
   shifts: DAYS.map((day) => ({
     day,
     hours: "",
@@ -314,6 +316,20 @@ export default function AddItemModal({
               )}
               {itemType === "savings" && (
                 <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 mt-2">
+                      Savings Priority
+                    </label>
+                    <select
+                      value={item.priorityTier}
+                      onChange={(e) => set({ priorityTier: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                    >
+                      <option value="3">General — equal split with other goals</option>
+                      <option value="1">High Priority — 70% of savings pool while active</option>
+                      <option value="2">Secondary Priority — 100% after High Priority is complete</option>
+                    </select>
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1 mt-2">
                       Target Amount ($)
