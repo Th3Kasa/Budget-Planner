@@ -36,13 +36,36 @@ export default function GoalsTab({
   const [editingWeightId, setEditingWeightId] = useState<string | null>(null);
   const [editingWeightValue, setEditingWeightValue] = useState("");
 
-  // Unlocked goals share the auto-allocation pool; compute each goal's actual %
+  // Compute each unlocked goal's effective allocation % accounting for priority tiers:
+  //   P1 goals active  → P1 goals share 70%; all others share 30%
+  //   No P1, P2 active → P2 goals share 100%; P3 goals get 0%
+  //   All P3           → equal split by splitWeight
   const unlockedGoals = savings.filter((s) => !s.isLocked);
-  const totalWeight = unlockedGoals.reduce((sum, s) => sum + (s.splitWeight || 1), 0);
-  const getSplitPct = (s: SavingsGoal) =>
-    totalWeight > 0
-      ? Math.round(((s.splitWeight || 1) / totalWeight) * 100)
-      : 100;
+  const unlockedTier1 = unlockedGoals.filter((s) => (s.priorityTier ?? 3) === 1);
+  const unlockedTier2 = unlockedGoals.filter((s) => (s.priorityTier ?? 3) === 2);
+  const unlockedNonTier1 = unlockedGoals.filter((s) => (s.priorityTier ?? 3) !== 1);
+
+  const getSplitPct = (s: SavingsGoal): number => {
+    const thisTier = s.priorityTier ?? 3;
+    const w = s.splitWeight || 1;
+    if (unlockedTier1.length > 0) {
+      if (thisTier === 1) {
+        const t1W = unlockedTier1.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
+        return Math.round(70 * (w / t1W));
+      }
+      const nonT1W = unlockedNonTier1.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
+      return nonT1W > 0 ? Math.round(30 * (w / nonT1W)) : 0;
+    }
+    if (unlockedTier2.length > 0) {
+      if (thisTier === 2) {
+        const t2W = unlockedTier2.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
+        return Math.round(100 * (w / t2W));
+      }
+      return 0; // P3 gets nothing while P2 is active
+    }
+    const totalW = unlockedGoals.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
+    return totalW > 0 ? Math.round(100 * (w / totalW)) : 100;
+  };
 
   const totalSaved = savings.reduce((acc, s) => acc + (s.currentAmount || 0), 0);
   const weeklyRate = savings.reduce(
@@ -250,7 +273,7 @@ export default function GoalsTab({
                                   className="text-xs font-semibold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded hover:bg-indigo-100 transition-colors"
                                   title="Click to set split weight"
                                 >
-                                  {getSplitPct(s)}% split
+                                  {getSplitPct(s)}% of pool
                                 </button>
                               )}
                               {s.isManuallyWeighted && editingWeightId !== s.id && (
