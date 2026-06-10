@@ -627,6 +627,15 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     );
   };
 
+  const recalculateAllSavings = () => {
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        savings: prev.savings.map((s) => ({ ...s, isLocked: false })),
+      }),
+    );
+  };
+
   const handleAllocateFromVault = (goalId: string, amount: number) => {
     setState((prev) => ({
       ...prev,
@@ -766,6 +775,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onAddGoal={() => openAddModal("savings")}
               onUpdateSavingsWeight={updateSavingsWeight}
               onResetSavingsWeight={resetSavingsWeight}
+              onRecalculateSavings={recalculateAllSavings}
             />
           )}
 
