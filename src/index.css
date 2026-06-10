@@ -22,4 +22,36 @@ body {
   .glass-card-hover {
     @apply hover:bg-white/90 hover:shadow-[0_8px_32px_rgba(0,0,0,0.08)] transition-all duration-300;
   }
+
+  /* iOS safe-area padding utilities */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+/* Prevent iOS double-tap zoom on buttons */
+button, input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* Smooth momentum scrolling on iOS */
+.custom-scrollbar {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent content from being hidden behind mobile browser chrome */
+html {
+  height: -webkit-fill-available;
+}
+
+body {
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+}
+
+#root {
+  height: 100dvh;
 }
