@@ -19,6 +19,8 @@ export interface SavingsGoal {
   weeklyContribution: number;
   color?: string;
   isLocked?: boolean;
+  splitWeight?: number;         // Relative allocation weight; undefined = equal (treated as 1)
+  isManuallyWeighted?: boolean; // true when user has set a custom split weight
 }
 
 export interface Shift {
