@@ -8,6 +8,7 @@ export interface BudgetElement {
   color?: string;
   icon?: string;
   isLocked?: boolean;
+  isManuallySet?: boolean; // true when user has manually edited this debt's $/wk
 }
 
 export interface SavingsGoal {
@@ -41,12 +42,28 @@ export interface IncomeStream {
   useShifts?: boolean;
 }
 
-export interface CalendarEvent {
+// Row shape of the Supabase `shift_logs` table.
+export interface ShiftLog {
   id: string;
-  date: string;
-  title: string;
-  amount: number;
-  type: "income" | "expense";
+  user_id: string;
+  shift_date: string; // "yyyy-MM-dd"
+  income_stream_id: string;
+  income_stream_name: string;
+  hours: number;
+  hourly_rate: number;
+  notes?: string | null;
+  created_at: string;
+}
+
+// Row shape of the Supabase `weekly_snapshots` table.
+export interface WeeklySnapshot {
+  id: string;
+  user_id: string;
+  week_starting: string; // "yyyy-MM-dd"
+  net_income: number;
+  total_debt_balance: number;
+  total_paid_this_week: number;
+  created_at: string;
 }
 
 export interface Windfall {
@@ -72,7 +89,6 @@ export interface BudgetState {
   debts: BudgetElement[];
   savings: SavingsGoal[];
   cashBalance?: number;
-  calendarEvents?: CalendarEvent[];
   windfalls?: Windfall[];
   centrelinkEnabled?: boolean; // undefined = true (legacy states)
   centrelinkMaxFortnightly?: number; // undefined = current JobSeeker single rate
