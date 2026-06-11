@@ -384,6 +384,9 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       grossPay: String(anyItem.grossPay || ""),
       taxWithheld: String(anyItem.taxWithheld || ""),
       superAmount: String(anyItem.superAmount || ""),
+      paymentDate: anyItem.paymentDate || "",
+      payPeriodStart: anyItem.payPeriodStart || "",
+      payPeriodEnd: anyItem.payPeriodEnd || "",
       useShifts: anyItem.useShifts || false,
       shifts: anyItem.shifts
         ? anyItem.shifts.map((s: any) => ({
@@ -502,6 +505,9 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         weekStarting: isPayslip
           ? format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd")
           : undefined,
+        paymentDate: isPayslip ? fields.paymentDate || undefined : undefined,
+        payPeriodStart: isPayslip ? fields.payPeriodStart || undefined : undefined,
+        payPeriodEnd: isPayslip ? fields.payPeriodEnd || undefined : undefined,
         isCash: isPayslip ? false : fields.isCash,
         useShifts: fields.useShifts,
         shifts:
