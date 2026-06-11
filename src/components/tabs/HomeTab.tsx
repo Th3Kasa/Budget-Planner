@@ -19,6 +19,7 @@ import {
   closestCenter,
   PointerSensor,
   KeyboardSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent,
@@ -152,7 +153,8 @@ export default function HomeTab({
   const cashBalance = state.cashBalance || 0;
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
@@ -646,7 +648,7 @@ export default function HomeTab({
                                   </p>
                                 )}
                               </div>
-                              <div className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex items-center transition-opacity">
+                              <div className="flex items-center sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                 <button
                                   onClick={() => onEdit("expense", item)}
                                   className="text-gray-400 hover:text-indigo-600 p-1 md:p-2 transition-colors"
@@ -720,7 +722,8 @@ export default function HomeTab({
                         <SortableRow key={item.id} id={item.id}>
                           {({ attributes, listeners }) => (
                             <div className="flex flex-col p-4 md:p-5 rounded-2xl bg-white/40 border border-white/60 hover:bg-white/60 transition-colors group relative">
-                              <div className="absolute right-3 top-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex items-center gap-2 transition-opacity">
+                              {/* Desktop hover actions */}
+                              <div className="absolute right-3 top-3 hidden sm:flex opacity-0 group-hover:opacity-100 items-center gap-2 transition-opacity">
                                 {item.isManuallySet && (
                                   <button
                                     onClick={() => onResetDebtAllocation(item.id)}
@@ -747,7 +750,7 @@ export default function HomeTab({
                                 </button>
                               </div>
 
-                              <div className="flex justify-between items-start mb-4">
+                              <div className="flex justify-between items-start mb-3">
                                 <div className="flex items-center gap-2">
                                   <button
                                     {...attributes}
@@ -817,17 +820,16 @@ export default function HomeTab({
                                             </span>
                                           </button>
                                         )}
-                                        {item.amount > 0 && current > 0 && editingDebtId !== item.id && (
-                                          <span>
-                                            {" "}
-                                            • {Math.ceil(current / item.amount)} weeks left
-                                          </span>
-                                        )}
                                       </p>
+                                      {item.amount > 0 && current > 0 && editingDebtId !== item.id && (
+                                        <p className="text-[10px] text-gray-400 mt-0.5">
+                                          • {Math.ceil(current / item.amount)} weeks left
+                                        </p>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
-                                <div className="flex flex-col items-end gap-2 mt-1 mr-6">
+                                <div className="flex flex-col items-end gap-2 mt-1 flex-shrink-0">
                                   <div className="text-right">
                                     <span className="text-sm font-bold text-gray-900 block">
                                       ${money(current)} left
@@ -841,6 +843,34 @@ export default function HomeTab({
                                   </button>
                                 </div>
                               </div>
+
+                              {/* Mobile-only action strip */}
+                              <div className="flex sm:hidden items-center justify-end gap-1.5 mb-2">
+                                {item.isManuallySet && (
+                                  <button
+                                    onClick={() => onResetDebtAllocation(item.id)}
+                                    className="p-1.5 text-gray-400 bg-gray-50 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition-colors"
+                                    aria-label="Reset allocation"
+                                  >
+                                    <RotateCcw className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => onEdit("debt", item)}
+                                  className="p-1.5 text-gray-400 hover:text-indigo-600 rounded-lg transition-colors"
+                                  aria-label="Edit"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => onRemoveItem("debts", item.id)}
+                                  className="p-1.5 text-red-400 hover:text-red-600 rounded-lg transition-colors"
+                                  aria-label="Delete"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
                               <div className="w-full bg-gray-100 rounded-full h-2.5 mb-2 overflow-hidden shadow-inner">
                                 <div
                                   className="h-2.5 rounded-full transition-all duration-1000 ease-out"
