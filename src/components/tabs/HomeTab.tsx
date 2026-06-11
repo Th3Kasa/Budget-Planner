@@ -1178,12 +1178,12 @@ export default function HomeTab({
                               key={idx}
                               className="text-[10px] bg-white border border-gray-200 px-1.5 py-0.5 rounded text-gray-600"
                             >
-                              {d.name}: ${d.amount.toFixed(0)}
+                              {d.name}: ${money(d.amount)}
                             </span>
                           ))}
                           {wf.unallocatedCash > 0.01 && (
                             <span className="text-[10px] bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-emerald-700 font-medium">
-                              Vault: ${wf.unallocatedCash.toFixed(0)}
+                              Vault: ${money(wf.unallocatedCash)}
                             </span>
                           )}
                         </div>
@@ -1236,8 +1236,8 @@ export default function HomeTab({
                           {s.name}
                         </span>
                         <span className="text-xs text-gray-500">
-                          ${(s.currentAmount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}{" "}
-                          / ${s.targetAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          ${money(s.currentAmount || 0)}{" "}
+                          / ${money(s.targetAmount)}
                         </span>
                       </div>
                       <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
@@ -1328,7 +1328,7 @@ export default function HomeTab({
                     Net Income
                   </span>
                   <span className="block text-lg md:text-xl font-bold text-gray-900">
-                    ${summary.totalNetIncome.toFixed(0)}
+                    ${money(summary.totalNetIncome)}
                   </span>
                 </div>
               </div>
