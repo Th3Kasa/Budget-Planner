@@ -27,6 +27,9 @@ export interface NewItemFields {
   useShifts: boolean;
   shifts: ShiftFields[];
   priorityTier: string; // "1" | "2" | "3" — only used for savings goals
+  grossPay: string; // payslip income only
+  taxWithheld: string; // payslip income only
+  superAmount: string; // payslip income only
 }
 
 const DAYS = [
@@ -53,6 +56,9 @@ export const emptyItemFields = (): NewItemFields => ({
   hoursWorked: "",
   useShifts: false,
   priorityTier: "3",
+  grossPay: "",
+  taxWithheld: "",
+  superAmount: "",
   shifts: DAYS.map((day) => ({
     day,
     hours: "",
@@ -106,6 +112,7 @@ export default function AddItemModal({
     if (itemType !== "income" && itemType !== "savings" && !item.amount) return;
     if (itemType === "income") {
       if (item.type === "fixed" && !item.amount) return;
+      if (item.type === "payslip" && !item.grossPay) return;
       if (
         item.type === "casual" &&
         !item.useShifts &&
@@ -164,29 +171,95 @@ export default function AddItemModal({
                 >
                   <option value="casual">Casual (Hourly)</option>
                   <option value="fixed">Fixed (Weekly)</option>
+                  <option value="payslip">Payslip (This Week's Actuals)</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {item.type === "casual" ? "Hourly Rate ($)" : "Weekly Amount ($)"}
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  required={!(item.type === "casual" && item.useShifts)}
-                  value={item.type === "casual" ? item.hourlyRate : item.amount}
-                  onChange={(e) =>
-                    set(
-                      item.type === "casual"
-                        ? { hourlyRate: e.target.value }
-                        : { amount: e.target.value },
-                    )
-                  }
-                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                  placeholder="0.00"
-                />
-              </div>
+              {item.type === "payslip" ? (
+                <>
+                  <p className="text-xs text-gray-500 -mt-1">
+                    Enter the figures straight off your payslip for this week —
+                    tax and super are taken as-is, no estimating. Logged against
+                    the current week only.
+                  </p>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Gross Pay ($)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      required
+                      value={item.grossPay}
+                      onChange={(e) => set({ grossPay: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                      placeholder="Before tax, e.g. 1240.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Tax Withheld ($)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.taxWithheld}
+                      onChange={(e) => set({ taxWithheld: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                      placeholder="PAYG on the slip, e.g. 210.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Super ($){" "}
+                      <span className="text-gray-400 font-normal">(Optional)</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.superAmount}
+                      onChange={(e) => set({ superAmount: e.target.value })}
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                      placeholder="e.g. 148.80"
+                    />
+                  </div>
+                  {item.grossPay && (
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5 text-sm">
+                      <span className="text-gray-600">Net this week: </span>
+                      <span className="font-bold text-emerald-700">
+                        $
+                        {(
+                          Number(item.grossPay) - (Number(item.taxWithheld) || 0)
+                        ).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      {item.type === "casual" ? "Hourly Rate ($)" : "Weekly Amount ($)"}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      required={!(item.type === "casual" && item.useShifts)}
+                      value={item.type === "casual" ? item.hourlyRate : item.amount}
+                      onChange={(e) =>
+                        set(
+                          item.type === "casual"
+                            ? { hourlyRate: e.target.value }
+                            : { amount: e.target.value },
+                        )
+                      }
+                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                      placeholder="0.00"
+                    />
+                  </div>
               {item.type === "casual" && (
                 <>
                   <div className="flex items-center gap-2 mt-4 mb-2">
@@ -280,6 +353,8 @@ export default function AddItemModal({
                   Paid in cash (Untaxed)
                 </label>
               </div>
+                </>
+              )}
             </>
           ) : (
             <>

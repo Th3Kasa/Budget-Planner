@@ -37,13 +37,19 @@ export interface Shift {
 export interface IncomeStream {
   id: string;
   name: string;
-  type: "casual" | "fixed";
+  type: "casual" | "fixed" | "payslip";
   hourlyRate?: number;
   hoursWorked?: number;
   amount?: number;
   isCash?: boolean;
   shifts?: Shift[];
   useShifts?: boolean;
+  // Payslip actuals (type === "payslip"): figures taken straight off the slip,
+  // so tax and super are known and never estimated.
+  grossPay?: number;
+  taxWithheld?: number;
+  superAmount?: number;
+  weekStarting?: string; // "yyyy-MM-dd" Monday — payslips count only for their own week
 }
 
 // Row shape of the Supabase `shift_logs` table.

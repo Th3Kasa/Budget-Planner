@@ -19,7 +19,9 @@ export function buildBudgetCsv(state: BudgetState): string {
       inc.name,
       inc.type === "casual"
         ? `$${inc.hourlyRate || 0}/hr${inc.isCash ? " (cash)" : ""}`
-        : `fixed${inc.isCash ? " (cash)" : ""}`,
+        : inc.type === "payslip"
+          ? `payslip (tax $${(inc.taxWithheld || 0).toFixed(2)}, super $${(inc.superAmount || 0).toFixed(2)})`
+          : `fixed${inc.isCash ? " (cash)" : ""}`,
       calculateIncomeAmount(inc).toFixed(2),
       "",
       "",

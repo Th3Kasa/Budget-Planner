@@ -39,7 +39,11 @@ import {
   Legend,
 } from "recharts";
 import { cn } from "../../lib/utils";
-import { calculateIncomeAmount, IncomeSummary } from "../../lib/income";
+import {
+  calculateIncomeAmount,
+  isIncomeActive,
+  IncomeSummary,
+} from "../../lib/income";
 import { BudgetElement, BudgetState, IncomeStream, SavingsGoal } from "../../types";
 import { getIcon } from "../icons";
 import { ItemType } from "../AddItemModal";
@@ -262,10 +266,15 @@ export default function HomeTab({
             Income Streams
           </h3>
           <div className="space-y-3 relative z-10 max-h-[160px] overflow-y-auto custom-scrollbar pr-1">
-            {state.incomes.map((inc) => (
+            {state.incomes.map((inc) => {
+              const stalePayslip = inc.type === "payslip" && !isIncomeActive(inc);
+              return (
               <div
                 key={inc.id}
-                className="bg-white/40 p-2 rounded-lg border border-white/60 relative group/inc"
+                className={cn(
+                  "bg-white/40 p-2 rounded-lg border border-white/60 relative group/inc",
+                  stalePayslip && "opacity-50",
+                )}
               >
                 <div className="absolute right-1 top-1 opacity-100 sm:opacity-0 sm:group-hover/inc:opacity-100 flex items-center gap-2 transition-opacity">
                   <button
@@ -283,15 +292,54 @@ export default function HomeTab({
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
-                <p className="text-xs font-semibold text-gray-700 pr-5 flex items-center gap-1.5">
+                <p className="text-xs font-semibold text-gray-700 pr-5 flex items-center gap-1.5 flex-wrap">
                   {inc.name}
                   {inc.isCash && (
                     <span className="bg-emerald-100 text-emerald-700 text-[9px] px-1.5 py-0.5 rounded-sm font-bold uppercase tracking-wide">
                       Cash
                     </span>
                   )}
+                  {inc.type === "payslip" && (
+                    <span className="bg-indigo-100 text-indigo-700 text-[9px] px-1.5 py-0.5 rounded-sm font-bold uppercase tracking-wide">
+                      Payslip
+                    </span>
+                  )}
+                  {stalePayslip && (
+                    <span className="bg-gray-100 text-gray-500 text-[9px] px-1.5 py-0.5 rounded-sm font-bold uppercase tracking-wide">
+                      Past wk
+                    </span>
+                  )}
                 </p>
-                {inc.type === "casual" ? (
+                {inc.type === "payslip" ? (
+                  <div className="mt-1 space-y-0.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-gray-500">Gross:</span>
+                      <span className="text-xs font-bold text-gray-900">
+                        ${(inc.grossPay || 0).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-gray-500">Tax:</span>
+                      <span className="text-xs font-bold text-pink-600">
+                        -${(inc.taxWithheld || 0).toFixed(2)}
+                      </span>
+                    </div>
+                    {(inc.superAmount || 0) > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-gray-500">Super:</span>
+                        <span className="text-xs font-bold text-indigo-600">
+                          ${(inc.superAmount || 0).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between mt-1 pt-1 border-t border-gray-100/50">
+                      <span className="text-[10px] text-gray-500">Net:</span>
+                      <span className="text-xs font-bold text-gray-900">
+                        ${((inc.grossPay || 0) - (inc.taxWithheld || 0)).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                ) : inc.type === "casual" ? (
                   <div className="mt-1 space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] text-gray-500">Rate:</span>
@@ -339,7 +387,8 @@ export default function HomeTab({
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
           <div className="mt-3 pt-3 border-t border-gray-100/50 relative z-10 flex justify-between items-end">
             <span className="text-xs text-gray-500 font-medium">Gross Total:</span>
