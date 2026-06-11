@@ -25,6 +25,7 @@ import {
   IncomeStream,
   SavingsGoal,
 } from "../types";
+import { payslipFileName } from "../lib/payslip/parsePayslip";
 import AddItemModal, {
   emptyItemFields,
   ItemType,
@@ -177,6 +178,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   // freshly opened tab can never overwrite newer cloud data with stale
   // local state.
   const [cloudReady, setCloudReady] = useState(false);
+  const [payslipRefreshKey, setPayslipRefreshKey] = useState(0);
 
   // Persist locally immediately; debounce cloud writes so inline edits
   // don't fire a Supabase write per keystroke.
@@ -823,6 +825,59 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     );
   };
 
+  const handlePayslipArchive = async (
+    fields: NewItemFields,
+    file: File | null,
+  ) => {
+    if (!session?.user) return;
+    const userId = session.user.id;
+    const weekStart = format(
+      startOfWeek(new Date(), { weekStartsOn: 1 }),
+      "yyyy-MM-dd",
+    );
+    const fileName = payslipFileName(
+      fields.name || undefined,
+      fields.payPeriodStart || undefined,
+    );
+
+    let storagePath: string | null = null;
+    if (file) {
+      storagePath = `${userId}/${fileName}.pdf`;
+      const { error: uploadErr } = await supabase.storage
+        .from("payslip-pdfs")
+        .upload(storagePath, file, { upsert: true, contentType: "application/pdf" });
+      if (uploadErr) {
+        console.error("Payslip PDF upload failed:", uploadErr.message);
+        storagePath = null;
+      }
+    }
+
+    const gross = Number(fields.grossPay) || null;
+    const tax = Number(fields.taxWithheld) || null;
+    const { error: dbErr } = await supabase.from("payslips").upsert(
+      {
+        user_id: userId,
+        week_starting: weekStart,
+        employer: fields.name || null,
+        payment_date: fields.paymentDate || null,
+        period_start: fields.payPeriodStart || null,
+        period_end: fields.payPeriodEnd || null,
+        gross_pay: gross,
+        tax_withheld: tax,
+        super_amount: Number(fields.superAmount) || null,
+        net_pay: gross != null && tax != null ? gross - tax : gross,
+        file_name: fileName,
+        storage_path: storagePath,
+      },
+      { onConflict: "user_id,week_starting,file_name" },
+    );
+    if (dbErr) {
+      console.error("Payslip archive insert failed:", dbErr.message);
+    } else {
+      setPayslipRefreshKey((k) => k + 1);
+    }
+  };
+
   const handleAllocateFromVault = (goalId: string, amount: number) => {
     setState((prev) => ({
       ...prev,
@@ -952,6 +1007,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               weeklySurplus={weeklySurplus}
               incomes={state.incomes}
               session={session}
+              payslipRefreshKey={payslipRefreshKey}
             />
           )}
 
@@ -992,6 +1048,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               initialFields={modalInitialFields}
               onClose={closeModal}
               onSubmit={handleSubmitItem}
+              onPayslipArchive={handlePayslipArchive}
             />
           )}
         </div>
