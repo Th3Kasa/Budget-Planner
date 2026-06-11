@@ -138,8 +138,14 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
   }
   for (const s of savings) {
     if (s.isLocked) {
-      s.weeklyContribution = Math.min(pool, s.weeklyContribution || 0);
-      pool -= s.weeklyContribution;
+      // A fully-funded locked goal must not keep consuming pool.
+      const complete = s.targetAmount > 0 && (s.currentAmount || 0) >= s.targetAmount;
+      if (complete) {
+        s.weeklyContribution = 0;
+      } else {
+        s.weeklyContribution = Math.min(pool, s.weeklyContribution || 0);
+        pool -= s.weeklyContribution;
+      }
     } else {
       s.weeklyContribution = 0;
     }

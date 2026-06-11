@@ -568,14 +568,16 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   };
 
   const payDebt = (id: string) => {
-    setState((prev) => ({
-      ...prev,
-      debts: prev.debts.map((d) =>
-        d.id === id && d.totalBalance !== undefined
-          ? { ...d, totalBalance: Math.max(0, d.totalBalance - d.amount) }
-          : d,
-      ),
-    }));
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        debts: prev.debts.map((d) =>
+          d.id === id && d.totalBalance !== undefined
+            ? { ...d, totalBalance: Math.max(0, d.totalBalance - d.amount) }
+            : d,
+        ),
+      }),
+    );
   };
 
   const reorderItems = (
@@ -692,20 +694,22 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   };
 
   const paySavingsGoal = (id: string) => {
-    setState((prev) => ({
-      ...prev,
-      savings: prev.savings.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              currentAmount: Math.min(
-                s.targetAmount || Infinity,
-                (s.currentAmount || 0) + (s.weeklyContribution || 0),
-              ),
-            }
-          : s,
-      ),
-    }));
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        savings: prev.savings.map((s) =>
+          s.id === id
+            ? {
+                ...s,
+                currentAmount: Math.min(
+                  s.targetAmount || Infinity,
+                  (s.currentAmount || 0) + (s.weeklyContribution || 0),
+                ),
+              }
+            : s,
+        ),
+      }),
+    );
   };
 
   // Maps a shift's day name to its offset from Monday (weekStartsOn: 1).

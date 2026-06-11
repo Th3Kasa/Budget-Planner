@@ -38,34 +38,38 @@ export default function GoalsTab({
   const [editingContribId, setEditingContribId] = useState<string | null>(null);
   const [editingContribValue, setEditingContribValue] = useState("");
 
-  // Compute each unlocked goal's effective allocation % accounting for priority tiers:
-  //   P1 goals active  → P1 goals share 70%; all others share 30%
-  //   No P1, P2 active → P2 goals share 100%; P3 goals get 0%
-  //   All P3           → equal split by splitWeight
-  const unlockedGoals = savings.filter((s) => !s.isLocked);
-  const unlockedTier1 = unlockedGoals.filter((s) => (s.priorityTier ?? 3) === 1);
-  const unlockedTier2 = unlockedGoals.filter((s) => (s.priorityTier ?? 3) === 2);
-  const unlockedNonTier1 = unlockedGoals.filter((s) => (s.priorityTier ?? 3) !== 1);
+  // Compute each unlocked goal's effective allocation % accounting for priority tiers.
+  // Only incomplete goals count — a funded goal has no gap and receives 0%.
+  const isDone = (s: SavingsGoal) =>
+    s.targetAmount > 0 && (s.currentAmount || 0) >= s.targetAmount;
+
+  const activeUnlocked = savings.filter((s) => !s.isLocked && !isDone(s));
+  const activeTier1 = activeUnlocked.filter((s) => (s.priorityTier ?? 3) === 1);
+  const activeTier2 = activeUnlocked.filter((s) => (s.priorityTier ?? 3) === 2);
+  const activeNonTier1 = activeUnlocked.filter((s) => (s.priorityTier ?? 3) !== 1);
 
   const getSplitPct = (s: SavingsGoal): number => {
+    if (isDone(s)) return 0;
     const thisTier = s.priorityTier ?? 3;
     const w = s.splitWeight || 1;
-    if (unlockedTier1.length > 0) {
+    if (activeTier1.length > 0) {
       if (thisTier === 1) {
-        const t1W = unlockedTier1.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
-        return Math.round(70 * (w / t1W));
+        const t1W = activeTier1.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
+        // When P1 is the only active tier, it takes 100%; otherwise 70%.
+        const share = activeNonTier1.length === 0 ? 100 : 70;
+        return Math.round(share * (w / t1W));
       }
-      const nonT1W = unlockedNonTier1.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
+      const nonT1W = activeNonTier1.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
       return nonT1W > 0 ? Math.round(30 * (w / nonT1W)) : 0;
     }
-    if (unlockedTier2.length > 0) {
+    if (activeTier2.length > 0) {
       if (thisTier === 2) {
-        const t2W = unlockedTier2.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
+        const t2W = activeTier2.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
         return Math.round(100 * (w / t2W));
       }
-      return 0; // P3 gets nothing while P2 is active
+      return 0; // P3 waits while any P2 goal is active
     }
-    const totalW = unlockedGoals.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
+    const totalW = activeUnlocked.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
     return totalW > 0 ? Math.round(100 * (w / totalW)) : 100;
   };
 
@@ -301,7 +305,11 @@ export default function GoalsTab({
                           {!s.isLocked && (
                             <>
                               <span className="text-gray-300">·</span>
-                              {editingWeightId === s.id ? (
+                              {isDone(s) ? (
+                                <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                                  ✓ Funded
+                                </span>
+                              ) : editingWeightId === s.id ? (
                                 <span className="flex items-center gap-0.5">
                                   <input
                                     type="number"
@@ -338,7 +346,7 @@ export default function GoalsTab({
                                   {getSplitPct(s)}% of pool
                                 </button>
                               )}
-                              {s.isManuallyWeighted && editingWeightId !== s.id && (
+                              {s.isManuallyWeighted && editingWeightId !== s.id && !isDone(s) && (
                                 <button
                                   type="button"
                                   onClick={() => onResetSavingsWeight(s.id)}
