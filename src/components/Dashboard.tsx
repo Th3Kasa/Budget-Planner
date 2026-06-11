@@ -581,18 +581,20 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   };
 
   const reorderItems = (
-    type: "expenses" | "debts",
+    type: "expenses" | "debts" | "savings",
     activeId: string,
     overId: string,
   ) => {
     setState((prev) => {
-      const items = [...prev[type]];
+      const items = [...(prev[type] as { id: string }[])];
       const oldIndex = items.findIndex((i) => i.id === activeId);
       const newIndex = items.findIndex((i) => i.id === overId);
       if (oldIndex === -1 || newIndex === -1) return prev;
       const [moved] = items.splice(oldIndex, 1);
       items.splice(newIndex, 0, moved);
-      return { ...prev, [type]: items };
+      const next = { ...prev, [type]: items };
+      // Re-run allocation when savings order changes (order = priority rank).
+      return type === "savings" ? calculateAutoAllocation(next) : next;
     });
   };
 
@@ -1027,6 +1029,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onLockSavingsGoal={lockSavingsGoal}
               onUnlockSavingsGoal={unlockSavingsGoal}
               onPaySavingsGoal={paySavingsGoal}
+              onReorderSavings={(a, b) => reorderItems("savings", a, b)}
             />
           )}
 

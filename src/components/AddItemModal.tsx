@@ -560,17 +560,37 @@ export default function AddItemModal({
                 <>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1 mt-2">
-                      Savings Priority
+                      Goal Type
                     </label>
-                    <select
-                      value={item.priorityTier}
-                      onChange={(e) => set({ priorityTier: e.target.value })}
-                      className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
-                    >
-                      <option value="3">General — equal split with other goals</option>
-                      <option value="1">High Priority — 70% of savings pool while active</option>
-                      <option value="2">Secondary Priority — 100% after High Priority is complete</option>
-                    </select>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => set({ priorityTier: "1" })}
+                        className={`py-2.5 px-4 rounded-xl border-2 text-sm font-semibold transition-colors ${
+                          item.priorityTier === "1"
+                            ? "border-amber-400 bg-amber-50 text-amber-700"
+                            : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+                        }`}
+                      >
+                        ⭐ Priority
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => set({ priorityTier: "3" })}
+                        className={`py-2.5 px-4 rounded-xl border-2 text-sm font-semibold transition-colors ${
+                          item.priorityTier !== "1"
+                            ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                            : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"
+                        }`}
+                      >
+                        General
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1.5">
+                      {item.priorityTier === "1"
+                        ? "Gets 70% of your savings pool. Drag to rank it against other priority goals."
+                        : "Shares the remaining 30% equally with other general goals."}
+                    </p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1 mt-2">
