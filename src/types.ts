@@ -50,6 +50,10 @@ export interface IncomeStream {
   taxWithheld?: number;
   superAmount?: number;
   weekStarting?: string; // "yyyy-MM-dd" Monday — payslips count only for their own week
+  // Captured when a payslip PDF is parsed (all ISO yyyy-MM-dd).
+  paymentDate?: string;
+  payPeriodStart?: string;
+  payPeriodEnd?: string;
 }
 
 // Row shape of the Supabase `shift_logs` table.
