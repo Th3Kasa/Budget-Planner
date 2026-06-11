@@ -9,9 +9,9 @@ import {
 } from "lucide-react";
 import { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
-import { format, startOfWeek } from "date-fns";
+import { addDays, format, startOfWeek } from "date-fns";
 import { cn } from "../lib/utils";
-import { summarizeIncome } from "../lib/income";
+import { isIncomeActive, summarizeIncome } from "../lib/income";
 import { DEFAULT_JOBSEEKER_MAX_FORTNIGHTLY } from "../lib/calculators";
 import {
   calculateAutoAllocation,
@@ -700,32 +700,110 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     }));
   };
 
+  // Maps a shift's day name to its offset from Monday (weekStartsOn: 1).
+  const DAY_OFFSET: Record<string, number> = {
+    Monday: 0,
+    Tuesday: 1,
+    Wednesday: 2,
+    Thursday: 3,
+    Friday: 4,
+    Saturday: 5,
+    Sunday: 6,
+  };
+
   const handleCommitWeek = async (): Promise<void> => {
     if (!session?.user) return;
-    const weekStart = format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd");
     const userId = session.user.id;
+    const monday = startOfWeek(new Date(), { weekStartsOn: 1 });
+    const weekStart = format(monday, "yyyy-MM-dd");
+    const weekEnd = format(addDays(monday, 6), "yyyy-MM-dd");
+    // Pay day is Thursday — weekly totals and payslips land here as one marker.
+    const payDay = format(addDays(monday, 3), "yyyy-MM-dd");
 
-    // Write one shift_log entry per casual income stream using its weekly totals.
-    const casualStreams = state.incomes.filter((s) => s.type === "casual");
-    for (const stream of casualStreams) {
-      const hours = stream.useShifts
-        ? (stream.shifts ?? []).reduce((sum, sh) => sum + (sh.hours || 0), 0)
-        : stream.hoursWorked ?? 0;
+    // Commit is idempotent: clear this week's auto-committed rows first so
+    // pressing the button twice never stacks duplicates. Manually logged
+    // shifts (notes without the "[auto]" marker) are left untouched.
+    await supabase
+      .from("shift_logs")
+      .delete()
+      .eq("user_id", userId)
+      .gte("shift_date", weekStart)
+      .lte("shift_date", weekEnd)
+      .like("notes", "[auto]%");
+
+    const rows: {
+      user_id: string;
+      shift_date: string;
+      income_stream_id: string;
+      income_stream_name: string;
+      hours: number;
+      hourly_rate: number;
+      notes: string;
+    }[] = [];
+
+    for (const stream of state.incomes.filter((s) => s.type === "casual")) {
       const rate = stream.hourlyRate ?? 0;
-      if (hours > 0 && rate > 0) {
-        await supabase.from("shift_logs").insert({
+      if (stream.useShifts) {
+        // Detailed shifts: one marker per worked day, on its real date.
+        for (const sh of stream.shifts ?? []) {
+          const hours = sh.hours || 0;
+          const offset = DAY_OFFSET[sh.day];
+          if (hours > 0 && rate > 0 && offset !== undefined) {
+            rows.push({
+              user_id: userId,
+              shift_date: format(addDays(monday, offset), "yyyy-MM-dd"),
+              income_stream_id: stream.id,
+              income_stream_name: stream.name,
+              hours,
+              hourly_rate: rate,
+              notes: "[auto] shift",
+            });
+          }
+        }
+      } else {
+        // Weekly hours total — no per-day detail, so one marker on pay day.
+        const hours = stream.hoursWorked ?? 0;
+        if (hours > 0 && rate > 0) {
+          rows.push({
+            user_id: userId,
+            shift_date: payDay,
+            income_stream_id: stream.id,
+            income_stream_name: stream.name,
+            hours,
+            hourly_rate: rate,
+            notes: "[auto] weekly",
+          });
+        }
+      }
+    }
+
+    // Payslips for this week: a single marker on pay day carrying the actuals.
+    for (const ps of state.incomes.filter(
+      (s) => s.type === "payslip" && isIncomeActive(s),
+    )) {
+      const gross = ps.grossPay || 0;
+      if (gross > 0) {
+        rows.push({
           user_id: userId,
-          shift_date: weekStart,
-          income_stream_id: stream.id,
-          income_stream_name: stream.name,
-          hours,
-          hourly_rate: rate,
-          notes: "Auto-committed from homepage",
+          shift_date: payDay,
+          income_stream_id: ps.id,
+          income_stream_name: ps.name,
+          hours: 0,
+          hourly_rate: 0,
+          notes: `[auto] payslip ${JSON.stringify({
+            gross,
+            tax: ps.taxWithheld || 0,
+            super: ps.superAmount || 0,
+          })}`,
         });
       }
     }
 
-    // Upsert this week's snapshot (overrides any passive one).
+    if (rows.length > 0) {
+      await supabase.from("shift_logs").insert(rows);
+    }
+
+    // Upsert this week's snapshot (net already includes payslip actuals).
     const totalDebtBalance = state.debts.reduce((acc, d) => acc + (d.totalBalance ?? 0), 0);
     await supabase.from("weekly_snapshots").upsert(
       {
