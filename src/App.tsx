@@ -5,51 +5,46 @@ import Dashboard from "./components/Dashboard";
 import Login from "./components/Login";
 
 export default function App() {
-  const [isAuthenticatedLocal, setIsAuthenticatedLocal] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const savedSession = localStorage.getItem("budget_auth_session");
-    if (savedSession === "valid") setIsAuthenticatedLocal(true);
-  }, []);
-
-  useEffect(() => {
-    // Restore an existing anonymous session or create a new one.
-    // Cloud sync is best-effort: the app works offline if this fails.
-    supabase.auth
-      .getSession()
-      .then(async ({ data: { session: existing } }) => {
-        if (existing) {
-          setSession(existing);
-        } else {
-          const { data, error } = await supabase.auth.signInAnonymously();
-          if (error) console.error("Anonymous sign-in failed:", error.message);
-          setSession(data.session);
-        }
-      })
-      .catch((err) => console.error("Supabase auth error:", err));
+    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
+      if (s && !s.user?.email) {
+        // Sign out any stale anonymous session so the email-login gate is enforced.
+        await supabase.auth.signOut();
+        setSession(null);
+      } else {
+        setSession(s);
+      }
+      setLoading(false);
+    });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s && s.user?.email ? s : null);
+    });
     return () => subscription.unsubscribe();
   }, []);
 
-  const handleLocalLogin = () => {
-    setIsAuthenticatedLocal(true);
-    localStorage.setItem("budget_auth_session", "valid");
-  };
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F3F4F9] flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
-  if (!isAuthenticatedLocal) {
-    return <Login onLogin={handleLocalLogin} />;
+  if (!session) {
+    return <Login onLogin={() => {}} />;
   }
 
   return (
     <Dashboard
       session={session}
-      onLogout={() => {
-        setIsAuthenticatedLocal(false);
-        localStorage.removeItem("budget_auth_session");
+      onLogout={async () => {
+        await supabase.auth.signOut();
       }}
     />
   );

@@ -1,78 +1,85 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Fingerprint, LockKeyhole, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowRight, Eye, EyeOff, Fingerprint, LockKeyhole } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+
+const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'admin@bas-bp.vercel.app';
 
 interface LoginProps {
   onLogin: () => void;
 }
 
 export default function Login({ onLogin }: LoginProps) {
-  const [pin, setPin] = useState('');
-  const [error, setError] = useState(false);
-  const [isBiometricSupported, setIsBiometricSupported] = useState(false);
-  
-  // Custom states for biometric simulation
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanStatus, setScanStatus] = useState('');
-  const [scanSuccess, setScanSuccess] = useState(false);
-  // Ref lets the cancel button abort the timeout chain without a stale closure.
-  const scanCancelledRef = useRef(false);
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
 
-  // Check if WebAuthn or simulated biometrics are supported
   useEffect(() => {
-    // We default biometric trigger to true in AI Studio view so users can always experience it!
-    setIsBiometricSupported(true);
+    setBiometricAvailable(
+      typeof window !== 'undefined' &&
+      'credentials' in navigator &&
+      'PasswordCredential' in window,
+    );
   }, []);
 
-  const handlePinSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const savedPin = localStorage.getItem('login_pin') || '0000';
-    if (pin === savedPin) {
-      onLogin();
-    } else {
-      setError(true);
-      setPin('');
-      setTimeout(() => setError(false), 2000);
+  const doSignIn = async (email: string, pw: string): Promise<boolean> => {
+    const { error: err } = await supabase.auth.signInWithPassword({ email, password: pw });
+    if (err) {
+      setError('Incorrect password. Please try again.');
+      return false;
     }
+    // Offer credentials to the browser's native manager (triggers biometric prompt on iOS/Android).
+    if ('credentials' in navigator && 'PasswordCredential' in window) {
+      try {
+        const cred = new (window as any).PasswordCredential({
+          id: email,
+          password: pw,
+          name: 'Budget Planner',
+        });
+        await navigator.credentials.store(cred);
+      } catch {
+        // Non-critical — ignore if not supported or user dismissed
+      }
+    }
+    onLogin();
+    return true;
+  };
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!password || loading) return;
+    setLoading(true);
+    setError('');
+    await doSignIn(ADMIN_EMAIL, password);
+    setLoading(false);
   };
 
   const handleBiometricLogin = async () => {
-    const isRegistered = localStorage.getItem('biometric_enabled') === 'true';
-    if (!isRegistered) {
-      alert("No biometric (Face ID / Fingerprint) record found. Please sign in with your PIN first (default code is '0000') and go to the App Settings tab to register your biometric credentials!");
-      return;
+    if (!('credentials' in navigator) || loading) return;
+    setError('');
+    try {
+      const cred = await navigator.credentials.get({
+        password: true,
+        mediation: 'required' as CredentialMediationRequirement,
+      } as any);
+      if (!cred || !('password' in (cred as any))) {
+        setError('No saved credentials found. Please sign in with your password first.');
+        return;
+      }
+      setLoading(true);
+      const pc = cred as any;
+      await doSignIn(pc.id, pc.password);
+      setLoading(false);
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        setError('Biometric authentication failed. Please use your password.');
+      }
     }
-
-    scanCancelledRef.current = false;
-    setIsScanning(true);
-    setScanSuccess(false);
-    setScanStatus('Initializing camera & sensor...');
-
-    setTimeout(() => {
-      if (scanCancelledRef.current) return;
-      setScanStatus('Scanning Face / Fingerprint...');
-
-      setTimeout(() => {
-        if (scanCancelledRef.current) return;
-        setScanStatus('Verifying secure device keys...');
-
-        setTimeout(() => {
-          if (scanCancelledRef.current) return;
-          setScanSuccess(true);
-          setScanStatus('Biometric Matched!');
-
-          setTimeout(() => {
-            if (scanCancelledRef.current) return;
-            setIsScanning(false);
-            onLogin();
-          }, 800);
-        }, 1000);
-      }, 1200);
-    }, 800);
   };
 
   return (
     <div className="min-h-screen bg-[#F3F4F9] flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Ambience */}
       <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] rounded-full bg-indigo-500/10 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] rounded-full bg-emerald-500/10 blur-[120px] pointer-events-none" />
 
@@ -82,53 +89,73 @@ export default function Login({ onLogin }: LoginProps) {
             <LockKeyhole className="w-8 h-8" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Welcome Back</h1>
-          <p className="text-gray-500 mt-2">Enter your PIN or use registered biometrics to access your budget.</p>
+          <p className="text-gray-500 mt-2 text-sm">Sign in to access your budget.</p>
         </div>
 
-        <div className="bg-white/70 backdrop-blur-xl border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.04)] rounded-3xl p-8 relative">
-          <form onSubmit={handlePinSubmit} className="space-y-6">
+        <div className="bg-white/70 backdrop-blur-xl border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.04)] rounded-3xl p-8">
+          <form onSubmit={handlePasswordSubmit} className="space-y-5">
             <div>
-              <div className="flex justify-between items-center mb-2">
-                <label className="text-sm font-medium text-gray-700">Access PIN</label>
-                {error && <span className="text-xs font-bold text-red-500 animate-pulse">Incorrect PIN</span>}
-              </div>
+              <label className="text-sm font-medium text-gray-700 block mb-1.5">Email</label>
+              <input
+                type="email"
+                value={ADMIN_EMAIL}
+                readOnly
+                className="w-full bg-gray-100 border border-gray-200 rounded-xl py-3 px-4 text-gray-500 text-sm cursor-default"
+              />
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1.5">Password</label>
               <div className="relative">
                 <input
-                  type="password"
-                  maxLength={4}
-                  value={pin}
-                  onChange={(e) => {
-                    setPin(e.target.value.replace(/\D/g, ''));
-                    setError(false);
-                  }}
-                  className="w-full text-center text-3xl font-bold bg-gray-50/50 border border-gray-200 rounded-xl py-4 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all tracking-[0.5em]"
-                  placeholder="••••"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setError(''); }}
+                  placeholder="Enter your password"
                   autoFocus
+                  autoComplete="current-password"
+                  className="w-full bg-gray-50/50 border border-gray-200 rounded-xl py-3 px-4 pr-12 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
+            {error && (
+              <p className="text-sm text-red-500 font-medium">{error}</p>
+            )}
+
             <button
               type="submit"
-              disabled={pin.length !== 4}
+              disabled={!password || loading}
               className="w-full bg-indigo-600 text-white rounded-xl py-3.5 font-medium flex items-center justify-center gap-2 hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-indigo-200"
             >
-              Continue <ArrowRight className="w-4 h-4" />
+              {loading ? (
+                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>Sign In <ArrowRight className="w-4 h-4" /></>
+              )}
             </button>
           </form>
 
-          {isBiometricSupported && (
+          {biometricAvailable && (
             <>
-              <div className="my-6 flex items-center justify-center gap-4">
-                <div className="h-px bg-gray-200 flex-1"></div>
+              <div className="my-6 flex items-center gap-4">
+                <div className="h-px bg-gray-200 flex-1" />
                 <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Or</span>
-                <div className="h-px bg-gray-200 flex-1"></div>
+                <div className="h-px bg-gray-200 flex-1" />
               </div>
 
               <button
                 type="button"
                 onClick={handleBiometricLogin}
-                className="w-full bg-white border-2 border-gray-100 text-gray-700 rounded-xl py-3.5 font-medium flex items-center justify-center gap-2 hover:bg-gray-50 hover:border-gray-200 transition-all shadow-sm"
+                disabled={loading}
+                className="w-full bg-white border-2 border-gray-100 text-gray-700 rounded-xl py-3.5 font-medium flex items-center justify-center gap-2 hover:bg-gray-50 hover:border-gray-200 transition-all shadow-sm disabled:opacity-50"
               >
                 <Fingerprint className="w-5 h-5 text-indigo-600" />
                 Use Face ID / Fingerprint
@@ -137,46 +164,6 @@ export default function Login({ onLogin }: LoginProps) {
           )}
         </div>
       </div>
-
-      {/* Biometric Scanning Overlay */}
-      {isScanning && (
-        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-xs w-full text-center shadow-2xl border border-gray-100 relative animate-in zoom-in-95 duration-200">
-            <div className="relative w-24 h-24 mx-auto mb-6 flex items-center justify-center">
-              {/* Pulsing ring */}
-              <div className="absolute inset-0 rounded-full border-4 border-indigo-100 animate-ping opacity-75" />
-              <div className="absolute inset-2 rounded-full border-4 border-indigo-200 animate-pulse" />
-              
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center relative z-10 ${scanSuccess ? 'bg-emerald-500 text-white' : 'bg-indigo-600 text-white animate-pulse'}`}>
-                {scanSuccess ? (
-                  <CheckCircle2 className="w-10 h-10" />
-                ) : (
-                  <Fingerprint className="w-10 h-10" />
-                )}
-              </div>
-            </div>
-
-            <h3 className="text-lg font-bold text-gray-900 mb-2">
-              {scanSuccess ? 'Verification Successful' : 'Biometric Auth'}
-            </h3>
-            
-            <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
-              {!scanSuccess && <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />}
-              <span className={scanSuccess ? 'text-emerald-600 font-semibold' : ''}>{scanStatus}</span>
-            </div>
-
-            {!scanSuccess && (
-              <button
-                type="button"
-                onClick={() => { scanCancelledRef.current = true; setIsScanning(false); }}
-                className="mt-6 px-4 py-2 bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors rounded-xl text-xs font-semibold"
-              >
-                Cancel
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
