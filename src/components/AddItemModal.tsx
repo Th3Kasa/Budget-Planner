@@ -93,6 +93,7 @@ interface AddItemModalProps {
   initialFields: NewItemFields;
   onClose: () => void;
   onSubmit: (fields: NewItemFields) => void;
+  onPayslipArchive?: (fields: NewItemFields, file: File | null) => void;
 }
 
 export default function AddItemModal({
@@ -101,11 +102,13 @@ export default function AddItemModal({
   initialFields,
   onClose,
   onSubmit,
+  onPayslipArchive,
 }: AddItemModalProps) {
   const [item, setItem] = useState<NewItemFields>(initialFields);
   const [parsing, setParsing] = useState(false);
   const [parseErr, setParseErr] = useState<string | null>(null);
   const [parsed, setParsed] = useState<ParsedPayslip | null>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
 
   const set = (patch: Partial<NewItemFields>) =>
     setItem((prev) => ({ ...prev, ...patch }));
@@ -125,6 +128,7 @@ export default function AddItemModal({
       const lines = await extractPdfLines(file);
       const r = parsePayslip(lines);
       if (r.gross == null && r.net == null) throw new Error("nothing recognised");
+      setPdfFile(file);
       setParsed(r);
       setItem((prev) => ({
         ...prev,
@@ -171,6 +175,9 @@ export default function AddItemModal({
         return;
     }
     onSubmit(item);
+    if (itemType === "income" && item.type === "payslip") {
+      onPayslipArchive?.(item, pdfFile);
+    }
   };
 
   return (

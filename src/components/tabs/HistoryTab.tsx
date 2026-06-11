@@ -11,8 +11,12 @@ import {
 } from "date-fns";
 import {
   Calendar as CalendarIcon,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  Download,
+  FileText,
   Plus,
   Trash2,
   TrendingDown,
@@ -28,7 +32,7 @@ import {
 } from "recharts";
 import { Session } from "@supabase/supabase-js";
 import { supabase } from "../../lib/supabase";
-import { IncomeStream, ShiftLog, WeeklySnapshot } from "../../types";
+import { IncomeStream, PayslipRecord, ShiftLog, WeeklySnapshot } from "../../types";
 
 const WEEKS_PER_MONTH = 4.33;
 
@@ -46,6 +50,7 @@ interface HistoryTabProps {
   weeklySurplus: number;
   incomes: IncomeStream[];
   session: Session | null;
+  payslipRefreshKey?: number;
 }
 
 export default function HistoryTab({
@@ -56,6 +61,7 @@ export default function HistoryTab({
   weeklySurplus,
   incomes,
   session,
+  payslipRefreshKey = 0,
 }: HistoryTabProps) {
   const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(
@@ -63,6 +69,8 @@ export default function HistoryTab({
   );
   const [shiftLogs, setShiftLogs] = useState<ShiftLog[]>([]);
   const [snapshots, setSnapshots] = useState<WeeklySnapshot[]>([]);
+  const [payslips, setPayslips] = useState<PayslipRecord[]>([]);
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   const casualIncomes = incomes.filter((i) => i.type === "casual");
 
@@ -104,7 +112,12 @@ export default function HistoryTab({
         .select("*")
         .eq("user_id", userId)
         .order("week_starting", { ascending: true }),
-    ]).then(([logsRes, snapsRes]) => {
+      supabase
+        .from("payslips")
+        .select("*")
+        .eq("user_id", userId)
+        .order("week_starting", { ascending: false }),
+    ]).then(([logsRes, snapsRes, psRes]) => {
       if (!alive) return;
       if (logsRes.error)
         console.error("Shift log load failed:", logsRes.error.message);
@@ -112,11 +125,16 @@ export default function HistoryTab({
       if (snapsRes.error)
         console.error("Snapshot load failed:", snapsRes.error.message);
       else if (snapsRes.data) setSnapshots(snapsRes.data as WeeklySnapshot[]);
+      if (psRes.error)
+        console.error("Payslip archive load failed:", psRes.error.message);
+      else if (psRes.data) setPayslips(psRes.data as PayslipRecord[]);
     });
     return () => {
       alive = false;
     };
-  }, [session]);
+  // payslipRefreshKey bumps after a new payslip is archived, triggering a re-fetch.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, payslipRefreshKey]);
 
   const handleSaveShift = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,6 +170,29 @@ export default function HistoryTab({
   const handleDeleteShift = async (id: string) => {
     const { error } = await supabase.from("shift_logs").delete().eq("id", id);
     if (!error) setShiftLogs((prev) => prev.filter((l) => l.id !== id));
+  };
+
+  const handleDeletePayslip = async (id: string, storagePath: string | null) => {
+    const { error } = await supabase.from("payslips").delete().eq("id", id);
+    if (error) { console.error("Delete payslip failed:", error.message); return; }
+    setPayslips((prev) => prev.filter((p) => p.id !== id));
+    if (storagePath) {
+      await supabase.storage.from("payslip-pdfs").remove([storagePath]);
+    }
+  };
+
+  const handleDownloadPayslip = async (storagePath: string, fileName: string) => {
+    const { data, error } = await supabase.storage
+      .from("payslip-pdfs")
+      .createSignedUrl(storagePath, 3600);
+    if (error || !data?.signedUrl) {
+      console.error("Could not generate download URL:", error?.message);
+      return;
+    }
+    const a = document.createElement("a");
+    a.href = data.signedUrl;
+    a.download = `${fileName}.pdf`;
+    a.click();
   };
 
   const daysWithLogs = new Set(shiftLogs.map((l) => l.shift_date));
@@ -457,6 +498,126 @@ export default function HistoryTab({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Payslip Archive */}
+      <div className="glass-card p-4 md:p-6 border border-white/60">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <FileText className="w-5 h-5 text-indigo-600" />
+            Payslip Archive
+          </h2>
+          <button
+            onClick={() => setArchiveOpen((v) => !v)}
+            className="p-1 hover:bg-gray-100 rounded-lg transition"
+            aria-label={archiveOpen ? "Collapse payslip archive" : "Expand payslip archive"}
+          >
+            {archiveOpen ? (
+              <ChevronUp className="w-5 h-5 text-gray-600" />
+            ) : (
+              <ChevronDown className="w-5 h-5 text-gray-600" />
+            )}
+          </button>
+        </div>
+
+        {archiveOpen && (
+          <div className="mt-4 space-y-3">
+            {payslips.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6 italic">
+                No payslips archived yet. Upload a payslip PDF when adding an
+                income stream to start your history.
+              </p>
+            ) : (
+              payslips.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-3 md:p-4 bg-white rounded-xl border border-gray-100 shadow-sm gap-2"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-semibold text-gray-800">
+                        {p.employer ?? "Payslip"}
+                      </p>
+                      <span className="bg-indigo-100 text-indigo-700 text-[9px] px-1.5 py-0.5 rounded-sm font-bold uppercase tracking-wide">
+                        Payslip
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        Week of{" "}
+                        {format(parseISO(p.week_starting), "d MMM yyyy")}
+                      </span>
+                    </div>
+                    {(p.period_start || p.payment_date) && (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {p.period_start && p.period_end && (
+                          <>
+                            Period{" "}
+                            {format(parseISO(p.period_start), "d MMM")} →{" "}
+                            {format(parseISO(p.period_end), "d MMM yyyy")}
+                          </>
+                        )}
+                        {p.payment_date && (
+                          <> · Paid {format(parseISO(p.payment_date), "d MMM yyyy")}</>
+                        )}
+                      </p>
+                    )}
+                    {p.gross_pay != null && (
+                      <p className="text-xs mt-0.5">
+                        Gross{" "}
+                        <span className="font-semibold text-gray-700">
+                          ${money(p.gross_pay)}
+                        </span>
+                        {p.tax_withheld != null && (
+                          <>
+                            {" "}
+                            · Tax{" "}
+                            <span className="text-rose-500">
+                              -${money(p.tax_withheld)}
+                            </span>
+                          </>
+                        )}
+                        {p.super_amount != null && p.super_amount > 0 && (
+                          <> · Super ${money(p.super_amount)}</>
+                        )}
+                        {p.net_pay != null && (
+                          <>
+                            {" "}
+                            ={" "}
+                            <span className="font-bold text-emerald-600">
+                              Net ${money(p.net_pay)}
+                            </span>
+                          </>
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {p.storage_path && (
+                      <button
+                        onClick={() =>
+                          handleDownloadPayslip(p.storage_path!, p.file_name)
+                        }
+                        className="flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-50 px-2.5 py-1.5 rounded-lg hover:bg-indigo-100 transition"
+                        title="Download PDF"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        PDF
+                      </button>
+                    )}
+                    <button
+                      onClick={() =>
+                        handleDeletePayslip(p.id, p.storage_path ?? null)
+                      }
+                      className="p-1.5 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                      aria-label="Delete payslip"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       {/* Debt Payoff Progress */}

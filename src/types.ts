@@ -94,6 +94,24 @@ export interface Windfall {
   unallocatedCash: number;
 }
 
+// Row shape of the Supabase `payslips` table.
+export interface PayslipRecord {
+  id: string;
+  user_id: string;
+  week_starting: string; // "yyyy-MM-dd"
+  employer?: string | null;
+  payment_date?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  gross_pay?: number | null;
+  tax_withheld?: number | null;
+  super_amount?: number | null;
+  net_pay?: number | null;
+  file_name: string;
+  storage_path?: string | null;
+  created_at: string;
+}
+
 export interface BudgetState {
   incomes: IncomeStream[];
   hourlyRate?: number; // Legacy
