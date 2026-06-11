@@ -59,9 +59,20 @@ function fillSavingsEqually(
 
 // Tiered savings allocation:
 //   Tier 1 goals active  → tier-1 gets 70% of pool; all others share 30%
+//                          (but see below — the split self-balances)
 //   No tier-1 remaining  → tier-2 goals get 100% (overflow then goes to tier-3)
 //   No tier-1 or tier-2  → tier-3 goals share pool equally
 // Within each tier, splitWeight is honoured (defaults to equal).
+//
+// The split self-balances so money is never left on the table:
+//   • A goal only counts toward its tier once its gap > 0, so a fully-funded
+//     High Priority goal drops out and funding switches to the next tier.
+//   • If High Priority is the only thing left needing money, it takes 100%
+//     of the pool — not just 70%.
+//   • If High Priority fills up before spending its 70%, the remainder spills
+//     to the lower tiers; if the lower tiers fill up first, the remainder
+//     spills back to High Priority. Either way the full pool is used (up to
+//     the total of all gaps).
 function allocateSavingsTiered(
   goals: SavingsGoal[],
   pool: number,
@@ -74,10 +85,21 @@ function allocateSavingsTiered(
   const tier3 = goals.filter((s) => tier(s) === 3 && gap(s) > 0.01);
 
   if (tier1.length > 0) {
-    const t1Pool = pool * 0.70;
-    const restPool = pool * 0.30;
-    const t1Leftover = fillSavingsEqually(tier1, t1Pool, gap, assign);
-    return fillSavingsEqually([...tier2, ...tier3], restPool + t1Leftover, gap, assign);
+    const others = [...tier2, ...tier3];
+    // No lower-priority goals need funding → High Priority takes everything.
+    if (others.length === 0) {
+      return fillSavingsEqually(tier1, pool, gap, assign);
+    }
+    // Otherwise High Priority gets a 70% head start, the rest share 30%.
+    const t1Leftover = fillSavingsEqually(tier1, pool * 0.7, gap, assign);
+    const othersLeftover = fillSavingsEqually(
+      others,
+      pool * 0.3 + t1Leftover,
+      gap,
+      assign,
+    );
+    // If the lower tiers filled up, any remainder spills back to tier 1.
+    return fillSavingsEqually(tier1, othersLeftover, gap, assign);
   }
   if (tier2.length > 0) {
     const t2Leftover = fillSavingsEqually(tier2, pool, gap, assign);
