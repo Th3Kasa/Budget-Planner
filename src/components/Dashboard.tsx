@@ -381,6 +381,9 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       isCash: anyItem.isCash || false,
       hourlyRate: String(anyItem.hourlyRate || ""),
       hoursWorked: String(anyItem.hoursWorked || ""),
+      grossPay: String(anyItem.grossPay || ""),
+      taxWithheld: String(anyItem.taxWithheld || ""),
+      superAmount: String(anyItem.superAmount || ""),
       useShifts: anyItem.useShifts || false,
       shifts: anyItem.shifts
         ? anyItem.shifts.map((s: any) => ({
@@ -479,10 +482,11 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         });
       });
     } else if (newItemType === "income") {
+      const isPayslip = fields.type === "payslip";
       const itemToSave: IncomeStream = {
         id: editingItemId || Date.now().toString(),
         name: fields.name,
-        type: fields.type as "casual" | "fixed",
+        type: fields.type as "casual" | "fixed" | "payslip",
         amount: fields.type === "fixed" ? Number(fields.amount) : undefined,
         hourlyRate:
           fields.type === "casual"
@@ -490,18 +494,27 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
             : undefined,
         hoursWorked:
           fields.type === "casual" ? Number(fields.hoursWorked || 20) : undefined,
-        isCash: fields.isCash,
-        useShifts: fields.useShifts,
-        shifts: fields.useShifts
-          ? fields.shifts.map((s) => ({
-              day: s.day,
-              hours: Number(s.hours) || 0,
-              travelAllowance: Number(s.travelAllowance) || 0,
-              mealAllowance: Number(s.mealAllowance) || 0,
-              overtimeHours: Number(s.overtimeHours) || 0,
-              overtimeRate: Number(s.overtimeRate) || 0,
-            }))
+        // Payslip actuals — tax/super are known, not estimated. Logged against
+        // the current week so it only counts toward this week's budget.
+        grossPay: isPayslip ? Number(fields.grossPay) || 0 : undefined,
+        taxWithheld: isPayslip ? Number(fields.taxWithheld) || 0 : undefined,
+        superAmount: isPayslip ? Number(fields.superAmount) || 0 : undefined,
+        weekStarting: isPayslip
+          ? format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd")
           : undefined,
+        isCash: isPayslip ? false : fields.isCash,
+        useShifts: fields.useShifts,
+        shifts:
+          fields.useShifts && !isPayslip
+            ? fields.shifts.map((s) => ({
+                day: s.day,
+                hours: Number(s.hours) || 0,
+                travelAllowance: Number(s.travelAllowance) || 0,
+                mealAllowance: Number(s.mealAllowance) || 0,
+                overtimeHours: Number(s.overtimeHours) || 0,
+                overtimeRate: Number(s.overtimeRate) || 0,
+              }))
+            : undefined,
       };
 
       setState((prev) =>
