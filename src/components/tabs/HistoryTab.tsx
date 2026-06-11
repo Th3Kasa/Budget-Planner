@@ -161,6 +161,33 @@ export default function HistoryTab({
 
   const weekTotal = (log: ShiftLog) => Number(log.hours) * Number(log.hourly_rate);
 
+  // Commit Week tags auto-generated rows with a "[auto] ..." note. Payslip
+  // markers carry their actuals as JSON; parse them so the calendar can show
+  // gross/tax/net instead of an hours × rate line.
+  const parsePayslipLog = (
+    log: ShiftLog,
+  ): { gross: number; tax: number; super: number } | null => {
+    const prefix = "[auto] payslip ";
+    const notes = log.notes ?? "";
+    if (!notes.startsWith(prefix)) return null;
+    try {
+      const o = JSON.parse(notes.slice(prefix.length));
+      return {
+        gross: Number(o.gross) || 0,
+        tax: Number(o.tax) || 0,
+        super: Number(o.super) || 0,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  // Hide internal "[auto] ..." markers from the user-facing notes line.
+  const displayNotes = (log: ShiftLog) => {
+    const notes = log.notes ?? "";
+    return notes.startsWith("[auto]") ? "" : notes;
+  };
+
   const metricRows = [
     { label: "Total Net Income", weekly: totalNetIncome, cls: "text-emerald-600" },
     { label: "Expenses", weekly: totalExpenses, cls: "text-amber-600" },
@@ -379,34 +406,54 @@ export default function HistoryTab({
             </p>
           ) : (
             <div className="space-y-2">
-              {selectedDayLogs.map((log) => (
-                <div
-                  key={log.id}
-                  className="flex items-center justify-between p-3 md:p-4 bg-white rounded-xl border border-gray-100 shadow-sm"
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800">
-                      {log.income_stream_name}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {Number(log.hours)}h × ${money(Number(log.hourly_rate))}/hr ={" "}
-                      <span className="font-bold text-emerald-600">
-                        ${money(weekTotal(log))}
-                      </span>
-                      {log.notes && (
-                        <span className="ml-2 text-gray-400">· {log.notes}</span>
-                      )}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteShift(log.id)}
-                    className="p-1.5 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition"
-                    aria-label="Delete shift"
+              {selectedDayLogs.map((log) => {
+                const ps = parsePayslipLog(log);
+                const note = displayNotes(log);
+                return (
+                  <div
+                    key={log.id}
+                    className="flex items-center justify-between p-3 md:p-4 bg-white rounded-xl border border-gray-100 shadow-sm"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                        {log.income_stream_name}
+                        {ps && (
+                          <span className="bg-indigo-100 text-indigo-700 text-[9px] px-1.5 py-0.5 rounded-sm font-bold uppercase tracking-wide">
+                            Payslip
+                          </span>
+                        )}
+                      </p>
+                      {ps ? (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          Gross ${money(ps.gross)} · Tax{" "}
+                          <span className="text-rose-500">-${money(ps.tax)}</span>
+                          {ps.super > 0 && <> · Super ${money(ps.super)}</>} ={" "}
+                          <span className="font-bold text-emerald-600">
+                            Net ${money(ps.gross - ps.tax)}
+                          </span>
+                        </p>
+                      ) : (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {Number(log.hours)}h × ${money(Number(log.hourly_rate))}/hr ={" "}
+                          <span className="font-bold text-emerald-600">
+                            ${money(weekTotal(log))}
+                          </span>
+                          {note && (
+                            <span className="ml-2 text-gray-400">· {note}</span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => handleDeleteShift(log.id)}
+                      className="p-1.5 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                      aria-label="Delete shift"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
