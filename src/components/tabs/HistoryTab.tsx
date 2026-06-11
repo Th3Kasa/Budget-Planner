@@ -495,6 +495,22 @@ export default function HistoryTab({
                   </div>
                 );
               })}
+              {selectedDayLogs.length > 1 && (() => {
+                const total = selectedDayLogs.reduce((sum, log) => {
+                  const ps = parsePayslipLog(log);
+                  return sum + (ps ? ps.gross - ps.tax : weekTotal(log));
+                }, 0);
+                return (
+                  <div className="flex items-center justify-between px-4 py-3 bg-emerald-50 border border-emerald-100 rounded-xl">
+                    <span className="text-sm font-semibold text-gray-700">
+                      Total net income this week
+                    </span>
+                    <span className="text-sm font-bold text-emerald-700">
+                      ${money(total)}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
