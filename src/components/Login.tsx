@@ -26,7 +26,13 @@ export default function Login({ onLogin }: LoginProps) {
   const doSignIn = async (email: string, pw: string): Promise<boolean> => {
     const { error: err } = await supabase.auth.signInWithPassword({ email, password: pw });
     if (err) {
-      setError('Incorrect password. Please try again.');
+      // Invalid credentials gets a friendly message; anything else (server /
+      // config errors) is surfaced verbatim so problems aren't masked.
+      setError(
+        /invalid login credentials/i.test(err.message)
+          ? 'Incorrect password. Please try again.'
+          : err.message,
+      );
       return false;
     }
     // Offer credentials to the browser's native manager (triggers biometric prompt on iOS/Android).
