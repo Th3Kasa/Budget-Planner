@@ -144,7 +144,7 @@ const base: BudgetState = {
   check("balanced: auto debts split proportionally (zip:loan = 1:3)", approx(loan.amount / Math.max(zip.amount, 0.01), 3, 0.1), `zip=${zip.amount.toFixed(2)} loan=${loan.amount.toFixed(2)}`);
 }
 
-// --- Test 6b (snowball, the default): all spare cash hits the smallest balance first ---
+// --- Test 6b (snowball, the default): even minimums on others, bulk to smallest ---
 {
   const snowball: BudgetState = {
     ...base,
@@ -160,10 +160,31 @@ const base: BudgetState = {
   const car = out.debts.find((d) => d.id === "car")!;
   const zip = out.debts.find((d) => d.id === "zip")!;
   const loan = out.debts.find((d) => d.id === "loan")!;
-  check("snowball: manual minimum is preserved", approx(car.amount, 200), `car=${car.amount.toFixed(2)}`);
-  // zip is the smallest balance, so it soaks up the spare cash before loan/car.
-  check("snowball: smallest balance is funded before larger ones", zip.amount >= loan.amount - 0.01 && zip.amount >= car.amount - 200 - 0.01, `zip=${zip.amount.toFixed(2)} loan=${loan.amount.toFixed(2)}`);
-  check("snowball: next debt is only funded once the smallest is cleared", loan.amount < 0.01 || approx(zip.amount, 1000), `zip=${zip.amount.toFixed(2)} loan=${loan.amount.toFixed(2)}`);
+  // A manually-set, non-focus debt keeps EXACTLY the amount the user chose.
+  check("snowball: manual non-focus debt keeps its exact amount", approx(car.amount, 200), `car=${car.amount.toFixed(2)}`);
+  // zip is the smallest balance → it gets the biggest allocation of all.
+  check("snowball: focus (smallest) gets the most", zip.amount > loan.amount && zip.amount > car.amount, `zip=${zip.amount.toFixed(2)} loan=${loan.amount.toFixed(2)} car=${car.amount.toFixed(2)}`);
+  // The auto non-focus debt still gets a non-zero minimum (not starved to $0).
+  check("snowball: auto non-focus debt gets a non-zero minimum", loan.amount > 0.01, `loan=${loan.amount.toFixed(2)}`);
+}
+
+// --- Test 6d (snowball): auto-only debts — smallest gets the most, others split evenly ---
+{
+  const autoOnly: BudgetState = {
+    ...base,
+    debts: [
+      { id: "zip", name: "ZipPay", amount: 0, totalBalance: 1000, originalBalance: 1000, category: "Debt" },
+      { id: "cc", name: "Credit Card", amount: 0, totalBalance: 2000, originalBalance: 2000, category: "Debt" },
+      { id: "loan", name: "Personal Loan", amount: 0, totalBalance: 3000, originalBalance: 3000, category: "Debt" },
+    ],
+    savings: [],
+  };
+  const out = calculateAutoAllocation(autoOnly);
+  const zip = out.debts.find((d) => d.id === "zip")!;
+  const cc = out.debts.find((d) => d.id === "cc")!;
+  const loan = out.debts.find((d) => d.id === "loan")!;
+  check("snowball: smallest balance gets the greatest amount", zip.amount > cc.amount && zip.amount > loan.amount, `zip=${zip.amount.toFixed(2)} cc=${cc.amount.toFixed(2)} loan=${loan.amount.toFixed(2)}`);
+  check("snowball: the other debts are split evenly", approx(cc.amount, loan.amount, 0.05) && cc.amount > 0.01, `cc=${cc.amount.toFixed(2)} loan=${loan.amount.toFixed(2)}`);
 }
 
 // --- Test 6c (snowball): a fully cleared debt rolls its money into the next ---
