@@ -180,11 +180,20 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   const [cloudReady, setCloudReady] = useState(false);
   const [payslipRefreshKey, setPayslipRefreshKey] = useState(0);
 
+  // Live cloud-sync status, surfaced in Settings so failed writes aren't silent.
+  const [syncStatus, setSyncStatus] = useState<
+    "offline" | "syncing" | "synced" | "error"
+  >("offline");
+
   // Persist locally immediately; debounce cloud writes so inline edits
   // don't fire a Supabase write per keystroke.
   useEffect(() => {
     localStorage.setItem("budget_state_v4", JSON.stringify(state));
-    if (!session?.user || !cloudReady) return;
+    if (!session?.user || !cloudReady) {
+      setSyncStatus("offline");
+      return;
+    }
+    setSyncStatus("syncing");
     const timeout = setTimeout(() => {
       supabase
         .from("budgets")
@@ -197,7 +206,12 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           { onConflict: "user_id" },
         )
         .then(({ error }) => {
-          if (error) console.error("Cloud sync failed:", error.message);
+          if (error) {
+            console.error("Cloud sync failed:", error.message);
+            setSyncStatus("error");
+          } else {
+            setSyncStatus("synced");
+          }
         });
     }, 800);
     return () => clearTimeout(timeout);
@@ -305,38 +319,47 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
 
   const summary = summarizeIncome(state);
 
-  // Record one snapshot per week (Monday-based) for the debt payoff chart.
-  // ignoreDuplicates keeps the first snapshot of the week stable.
+  // Keep this week's snapshot (Monday-based) in step with the latest figures
+  // for the debt-payoff chart. Debounced and upserting (rather than
+  // ignore-duplicates) so the week's data point reflects the current state,
+  // not whatever happened to exist the first time the app loaded that week.
+  const snapshotDebtBalance = state.debts.reduce(
+    (acc, d) => acc + (d.totalBalance ?? 0),
+    0,
+  );
+  const snapshotPaid = state.debts.reduce((acc, d) => acc + d.amount, 0);
   useEffect(() => {
-    if (!session?.user) return;
+    if (!session?.user || !cloudReady) return;
+    const userId = session.user.id;
     const weekStart = format(
       startOfWeek(new Date(), { weekStartsOn: 1 }),
       "yyyy-MM-dd",
     );
-    const totalDebtBalance = state.debts.reduce(
-      (acc, d) => acc + (d.totalBalance ?? 0),
-      0,
-    );
-    const totalPaid = state.debts.reduce((acc, d) => acc + d.amount, 0);
-    supabase
-      .from("weekly_snapshots")
-      .upsert(
-        {
-          user_id: session.user.id,
-          week_starting: weekStart,
-          net_income: summary.totalNetIncome,
-          total_debt_balance: totalDebtBalance,
-          total_paid_this_week: totalPaid,
-        },
-        { onConflict: "user_id,week_starting", ignoreDuplicates: true },
-      )
-      .then(({ error }) => {
-        if (error) console.error("Snapshot write failed:", error.message);
-      });
-    // Intentionally runs only when the session is established, not on every
-    // state change — one snapshot per week is enough.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+    const timeout = setTimeout(() => {
+      supabase
+        .from("weekly_snapshots")
+        .upsert(
+          {
+            user_id: userId,
+            week_starting: weekStart,
+            net_income: summary.totalNetIncome,
+            total_debt_balance: snapshotDebtBalance,
+            total_paid_this_week: snapshotPaid,
+          },
+          { onConflict: "user_id,week_starting" },
+        )
+        .then(({ error }) => {
+          if (error) console.error("Snapshot write failed:", error.message);
+        });
+    }, 1000);
+    return () => clearTimeout(timeout);
+  }, [
+    session,
+    cloudReady,
+    summary.totalNetIncome,
+    snapshotDebtBalance,
+    snapshotPaid,
+  ]);
 
   const totalExpenses = state.expenses.reduce(
     (acc, el) =>
@@ -1041,7 +1064,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                 state.centrelinkMaxFortnightly ??
                 DEFAULT_JOBSEEKER_MAX_FORTNIGHTLY
               }
-              isSyncing={!!session?.user}
+              syncStatus={syncStatus}
               onToggleCentrelink={handleToggleCentrelink}
               onChangeCentrelinkMax={handleChangeCentrelinkMax}
               onExportCsv={() => downloadBudgetCsv(state)}

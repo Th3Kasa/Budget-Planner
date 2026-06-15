@@ -21,7 +21,10 @@ export function isIncomeActive(
   weekStart: string = weekStartOf(),
 ): boolean {
   if (inc.type !== "payslip") return true;
-  return (inc.weekStarting ?? weekStart) === weekStart;
+  // A payslip must be anchored to a specific week. An unanchored one (missing
+  // weekStarting) is treated as inactive rather than counting every week.
+  if (!inc.weekStarting) return false;
+  return inc.weekStarting === weekStart;
 }
 
 // Single source of truth for an income stream's gross weekly amount.

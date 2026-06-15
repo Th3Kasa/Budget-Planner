@@ -13,7 +13,9 @@ export interface ParsedPayslip {
   periodEnd?: string; // ISO yyyy-MM-dd
 }
 
-const AMOUNT = "\\$?\\s*([\\d,]+\\.\\d{2})";
+// Cents are optional: payslips that print whole-dollar figures ("$1,200" or
+// "1200") are just as valid as "$1,200.00".
+const AMOUNT = "\\$?\\s*([\\d,]+(?:\\.\\d{2})?)";
 const DATE = "(\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})";
 
 const num = (s?: string): number | undefined =>

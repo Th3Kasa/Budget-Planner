@@ -16,7 +16,7 @@ import {
 interface SettingsTabProps {
   centrelinkEnabled: boolean;
   centrelinkMaxFortnightly: number;
-  isSyncing: boolean;
+  syncStatus: "offline" | "syncing" | "synced" | "error";
   onToggleCentrelink: (enabled: boolean) => void;
   onChangeCentrelinkMax: (amount: number) => void;
   onExportCsv: () => void;
@@ -26,7 +26,7 @@ interface SettingsTabProps {
 export default function SettingsTab({
   centrelinkEnabled,
   centrelinkMaxFortnightly,
-  isSyncing,
+  syncStatus,
   onToggleCentrelink,
   onChangeCentrelinkMax,
   onExportCsv,
@@ -355,36 +355,39 @@ export default function SettingsTab({
 
         {/* Cloud Sync */}
         <div className="glass-card p-6 border border-gray-100/50 md:col-span-2">
-          <div className="flex items-center gap-3">
-            <div
-              className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                isSyncing
-                  ? "bg-emerald-50 text-emerald-600"
-                  : "bg-gray-50 text-gray-400"
-              }`}
-            >
-              {isSyncing ? (
-                <Cloud className="w-5 h-5 flex-shrink-0" />
-              ) : (
-                <CloudOff className="w-5 h-5 flex-shrink-0" />
-              )}
-            </div>
-            <div>
-              <h3 className="font-bold text-gray-900">Cloud Backup</h3>
-              <p className="text-xs text-gray-500">
-                Your budget backs up to the cloud automatically.
-              </p>
-            </div>
-            <span
-              className={`ml-auto text-[10px] uppercase font-bold px-2 py-1 rounded ${
-                isSyncing
-                  ? "bg-emerald-100 text-emerald-800"
-                  : "bg-gray-100 text-gray-500"
-              }`}
-            >
-              {isSyncing ? "Active" : "Offline"}
-            </span>
-          </div>
+          {(() => {
+            const ui = {
+              synced: { label: "Synced", circle: "bg-emerald-50 text-emerald-600", chip: "bg-emerald-100 text-emerald-800" },
+              syncing: { label: "Syncing…", circle: "bg-amber-50 text-amber-600", chip: "bg-amber-100 text-amber-800" },
+              error: { label: "Sync error", circle: "bg-red-50 text-red-600", chip: "bg-red-100 text-red-800" },
+              offline: { label: "Offline", circle: "bg-gray-50 text-gray-400", chip: "bg-gray-100 text-gray-500" },
+            }[syncStatus];
+            const online = syncStatus === "synced" || syncStatus === "syncing";
+            return (
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${ui.circle}`}>
+                  {syncStatus === "syncing" ? (
+                    <Loader2 className="w-5 h-5 flex-shrink-0 animate-spin" />
+                  ) : online ? (
+                    <Cloud className="w-5 h-5 flex-shrink-0" />
+                  ) : (
+                    <CloudOff className="w-5 h-5 flex-shrink-0" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900">Cloud Backup</h3>
+                  <p className="text-xs text-gray-500">
+                    {syncStatus === "error"
+                      ? "Couldn't reach the cloud — changes are saved locally and will retry."
+                      : "Your budget backs up to the cloud automatically."}
+                  </p>
+                </div>
+                <span className={`ml-auto text-[10px] uppercase font-bold px-2 py-1 rounded ${ui.chip}`}>
+                  {ui.label}
+                </span>
+              </div>
+            );
+          })()}
           <p className="text-[11px] text-gray-400 mt-4">
             Your data is stored securely in a private database protected by
             row-level security — no sign-in required. Shift logs and weekly debt
