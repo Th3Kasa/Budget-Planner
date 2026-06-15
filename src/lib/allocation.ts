@@ -1,6 +1,12 @@
 import { BudgetState, BudgetElement, SavingsGoal, Windfall } from "../types";
 import { summarizeIncome } from "./income";
 
+// Snowball: share of the leftover surplus reserved and split EVENLY across the
+// non-focus debts as minimum payments (so none sit at $0). The rest is hurled
+// at the smallest balance. 0.30 = 30% spread across the others, ~70% to the
+// focus debt.
+const SNOWBALL_RESERVE = 0.30;
+
 // Distribute `pool` across `items` proportional to `weight(item)`,
 // capping each item at `cap(item)`. When an item hits its cap, its
 // unused share is redistributed among the rest. Returns leftover pool.
@@ -126,18 +132,47 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
   // Remaining pool is split across debts according to the chosen strategy.
   // (Manual amounts above act as each debt's minimum payment either way.)
   if ((prevState.debtStrategy ?? "snowball") === "snowball") {
-    // Debt snowball (Ramsey method): pour the entire surplus into the
-    // smallest-balance debt first — on top of its minimum — until it's
-    // cleared, then roll into the next smallest. Because the whole
-    // allocation re-runs whenever a payment is made or a debt is added,
-    // the "snowball" rolls forward on its own as balances hit zero.
+    // Debt snowball: every debt keeps getting a fair, even minimum, but the
+    // bulk of the surplus is hurled at the SMALLEST balance so it clears
+    // fastest — then rolls into the next once it's gone. Manual amounts above
+    // already act as that debt's own minimum. Because the whole allocation
+    // re-runs on every payment/edit, the snowball rolls forward on its own.
+    const room = (d: BudgetElement) =>
+      Math.max(0, (d.totalBalance ?? 0) - d.amount);
     const ordered = debts
-      .filter((d) => Math.max(0, (d.totalBalance ?? 0) - d.amount) > 0.01)
+      .filter((d) => room(d) > 0.01)
       .sort((a, b) => (a.totalBalance ?? 0) - (b.totalBalance ?? 0));
+
+    // 1) Reserve a slice and split it EVENLY across the non-focus AUTO debts
+    //    (everything except the smallest, excluding ones the user gave a fixed
+    //    amount) as minimum payments, capped at each one's balance. Unused
+    //    reserve flows back to the focus debt. Manually-set debts keep exactly
+    //    the amount the user chose.
+    if (ordered.length > 1 && pool > 0.01) {
+      let reserve = pool * SNOWBALL_RESERVE;
+      let others = ordered
+        .slice(1)
+        .filter((d) => !d.isManuallySet && room(d) > 0.01);
+      while (others.length > 0 && reserve > 0.01) {
+        const share = reserve / others.length;
+        let spent = 0;
+        for (const d of others) {
+          const add = Math.min(share, room(d));
+          d.amount += add;
+          spent += add;
+        }
+        reserve -= spent;
+        pool -= spent;
+        others = others.filter((d) => room(d) > 0.01);
+        if (spent < 0.001) break;
+      }
+    }
+
+    // 2) Everything left attacks the smallest balance first, rolling into the
+    //    next once it's full.
     for (const d of ordered) {
       if (pool <= 0.01) break;
-      const room = Math.max(0, (d.totalBalance ?? 0) - d.amount);
-      const add = Math.min(room, pool);
+      const add = Math.min(room(d), pool);
       d.amount += add;
       pool -= add;
     }

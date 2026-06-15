@@ -256,7 +256,16 @@ export default function HomeTab({
   );
 
   const expenseIds = state.expenses.map((e) => e.id);
-  const debtIds = state.debts.map((d) => d.id);
+  // In snowball mode the list auto-sorts by balance (smallest at the top, the
+  // biggest debt at the bottom) and re-sorts live as balances change. In
+  // balanced mode the user's manual drag order is kept.
+  const displayDebts =
+    debtStrategy === "snowball"
+      ? [...state.debts].sort(
+          (a, b) => (a.totalBalance ?? 0) - (b.totalBalance ?? 0),
+        )
+      : state.debts;
+  const debtIds = displayDebts.map((d) => d.id);
 
   return (
     <div className="space-y-8">
@@ -724,9 +733,10 @@ export default function HomeTab({
                 </div>
                 {debtStrategy === "snowball" && (
                   <p className="text-[11px] text-gray-500 mb-2 leading-snug">
-                    Your set repayments are kept as minimums; every spare dollar
-                    is piled onto the smallest balance until it's gone, then
-                    rolls into the next.
+                    Sorted smallest balance first. Your set repayments are kept
+                    as minimums, the other debts get an even minimum, and the
+                    rest is hurled at the smallest balance until it's gone —
+                    then rolls into the next.
                   </p>
                 )}
                 <div className="flex justify-between items-center text-right mb-2">
@@ -752,13 +762,14 @@ export default function HomeTab({
                   sensors={sensors}
                   collisionDetection={closestCenter}
                   onDragEnd={(e: DragEndEvent) => {
+                    if (debtStrategy === "snowball") return; // auto-sorted by balance
                     const { active, over } = e;
                     if (over && active.id !== over.id)
                       onReorderDebts(String(active.id), String(over.id));
                   }}
                 >
                   <SortableContext items={debtIds} strategy={verticalListSortingStrategy}>
-                    {state.debts.map((item) => {
+                    {displayDebts.map((item) => {
                       const original =
                         item.originalBalance || item.totalBalance || item.amount;
                       const current = item.totalBalance || 0;
@@ -802,14 +813,24 @@ export default function HomeTab({
 
                               <div className="flex justify-between items-start mb-3">
                                 <div className="flex items-center gap-2">
-                                  <button
-                                    {...attributes}
-                                    {...listeners}
-                                    className="cursor-grab active:cursor-grabbing p-1 text-gray-300 hover:text-gray-500 touch-none flex-shrink-0"
-                                    aria-label="Drag to reorder"
-                                  >
-                                    <GripVertical className="w-4 h-4" />
-                                  </button>
+                                  {debtStrategy === "snowball" ? (
+                                    <span
+                                      className="p-1 text-gray-200 flex-shrink-0"
+                                      title="Auto-sorted: smallest balance first"
+                                      aria-hidden
+                                    >
+                                      <GripVertical className="w-4 h-4" />
+                                    </span>
+                                  ) : (
+                                    <button
+                                      {...attributes}
+                                      {...listeners}
+                                      className="cursor-grab active:cursor-grabbing p-1 text-gray-300 hover:text-gray-500 touch-none flex-shrink-0"
+                                      aria-label="Drag to reorder"
+                                    >
+                                      <GripVertical className="w-4 h-4" />
+                                    </button>
+                                  )}
                                   <div className="flex items-center gap-3">
                                     <div
                                       className="w-10 h-10 rounded-full flex items-center justify-center text-white shadow-sm flex-shrink-0"
