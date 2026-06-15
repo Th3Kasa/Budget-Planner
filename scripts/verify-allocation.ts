@@ -107,7 +107,7 @@ const base: BudgetState = {
   check("undo restores savings", approx(undone.savings.reduce((a, s) => a + (s.currentAmount || 0), 0), 0));
 }
 
-// --- Test 6 (updated): manually-set debt keeps its amount; others rebalance proportionally ---
+// --- Test 6: manually-set debt keeps its amount (acts as a minimum) ---
 {
   const manual: BudgetState = {
     ...base,
@@ -120,11 +120,68 @@ const base: BudgetState = {
   };
   const out = calculateAutoAllocation(manual);
   const car = out.debts.find((d) => d.id === "car")!;
+  check("manual debt keeps its minimum amount", approx(car.amount, 200), `car=${car.amount.toFixed(2)}`);
+}
+
+// --- Test 6a (balanced mode): auto debts split proportionally by balance ---
+{
+  const balanced: BudgetState = {
+    ...base,
+    debtStrategy: "balanced",
+    debts: [
+      { id: "car", name: "Car Loan", amount: 200, totalBalance: 5000, originalBalance: 6000, category: "Debt", isManuallySet: true },
+      { id: "zip", name: "ZipPay", amount: 0, totalBalance: 1000, originalBalance: 1000, category: "Debt" },
+      { id: "loan", name: "Personal Loan", amount: 0, totalBalance: 3000, originalBalance: 3000, category: "Debt" },
+    ],
+    savings: [],
+  };
+  const out = calculateAutoAllocation(balanced);
+  const car = out.debts.find((d) => d.id === "car")!;
   const zip = out.debts.find((d) => d.id === "zip")!;
   const loan = out.debts.find((d) => d.id === "loan")!;
-  check("manual debt keeps exact amount", approx(car.amount, 200), `car=${car.amount.toFixed(2)}`);
+  check("balanced: manual debt keeps exact amount", approx(car.amount, 200), `car=${car.amount.toFixed(2)}`);
   // Remaining pool splits 1000:3000 = 1:3 between zip and loan
-  check("auto debts split proportionally (zip:loan = 1:3)", approx(loan.amount / Math.max(zip.amount, 0.01), 3, 0.1), `zip=${zip.amount.toFixed(2)} loan=${loan.amount.toFixed(2)}`);
+  check("balanced: auto debts split proportionally (zip:loan = 1:3)", approx(loan.amount / Math.max(zip.amount, 0.01), 3, 0.1), `zip=${zip.amount.toFixed(2)} loan=${loan.amount.toFixed(2)}`);
+}
+
+// --- Test 6b (snowball, the default): all spare cash hits the smallest balance first ---
+{
+  const snowball: BudgetState = {
+    ...base,
+    // debtStrategy omitted → defaults to snowball
+    debts: [
+      { id: "car", name: "Car Loan", amount: 200, totalBalance: 5000, originalBalance: 6000, category: "Debt", isManuallySet: true },
+      { id: "zip", name: "ZipPay", amount: 0, totalBalance: 1000, originalBalance: 1000, category: "Debt" },
+      { id: "loan", name: "Personal Loan", amount: 0, totalBalance: 3000, originalBalance: 3000, category: "Debt" },
+    ],
+    savings: [],
+  };
+  const out = calculateAutoAllocation(snowball);
+  const car = out.debts.find((d) => d.id === "car")!;
+  const zip = out.debts.find((d) => d.id === "zip")!;
+  const loan = out.debts.find((d) => d.id === "loan")!;
+  check("snowball: manual minimum is preserved", approx(car.amount, 200), `car=${car.amount.toFixed(2)}`);
+  // zip is the smallest balance, so it soaks up the spare cash before loan/car.
+  check("snowball: smallest balance is funded before larger ones", zip.amount >= loan.amount - 0.01 && zip.amount >= car.amount - 200 - 0.01, `zip=${zip.amount.toFixed(2)} loan=${loan.amount.toFixed(2)}`);
+  check("snowball: next debt is only funded once the smallest is cleared", loan.amount < 0.01 || approx(zip.amount, 1000), `zip=${zip.amount.toFixed(2)} loan=${loan.amount.toFixed(2)}`);
+}
+
+// --- Test 6c (snowball): a fully cleared debt rolls its money into the next ---
+{
+  const rolled: BudgetState = {
+    ...base,
+    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 3000 }], // big surplus
+    debts: [
+      { id: "zip", name: "ZipPay", amount: 0, totalBalance: 200, originalBalance: 200, category: "Debt" },
+      { id: "card", name: "Credit Card", amount: 0, totalBalance: 800, originalBalance: 800, category: "Debt" },
+    ],
+    savings: [{ id: "em", name: "Emergency Fund", targetAmount: 5000, currentAmount: 0, weeklyContribution: 0 }],
+  };
+  const out = calculateAutoAllocation(rolled);
+  const zip = out.debts.find((d) => d.id === "zip")!;
+  const card = out.debts.find((d) => d.id === "card")!;
+  // Surplus is large enough to cover both balances; each is capped at its balance.
+  check("snowball: smallest debt fully funded then rolls into next", approx(zip.amount, 200) && approx(card.amount, 800), `zip=${zip.amount.toFixed(2)} card=${card.amount.toFixed(2)}`);
 }
 
 // --- Calculator checks (annual figures verified against ATO 2025-26 / 2026-27) ---

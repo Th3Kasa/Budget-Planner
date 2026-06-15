@@ -123,16 +123,37 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
     }
   }
 
-  // Remaining pool: auto debts share proportionally by outstanding balance.
-  pool = splitProportional(
-    debts.filter((d) => !d.isManuallySet),
-    pool,
-    (d) => Math.max(0, d.totalBalance ?? 0),
-    (d) => Math.max(0, (d.totalBalance ?? Infinity) - d.amount),
-    (d, amt) => {
-      d.amount += amt;
-    },
-  );
+  // Remaining pool is split across debts according to the chosen strategy.
+  // (Manual amounts above act as each debt's minimum payment either way.)
+  if ((prevState.debtStrategy ?? "snowball") === "snowball") {
+    // Debt snowball (Ramsey method): pour the entire surplus into the
+    // smallest-balance debt first — on top of its minimum — until it's
+    // cleared, then roll into the next smallest. Because the whole
+    // allocation re-runs whenever a payment is made or a debt is added,
+    // the "snowball" rolls forward on its own as balances hit zero.
+    const ordered = debts
+      .filter((d) => Math.max(0, (d.totalBalance ?? 0) - d.amount) > 0.01)
+      .sort((a, b) => (a.totalBalance ?? 0) - (b.totalBalance ?? 0));
+    for (const d of ordered) {
+      if (pool <= 0.01) break;
+      const room = Math.max(0, (d.totalBalance ?? 0) - d.amount);
+      const add = Math.min(room, pool);
+      d.amount += add;
+      pool -= add;
+    }
+  } else {
+    // Balanced: auto debts share the pool proportionally by outstanding
+    // balance, and any leftover flows on to savings goals below.
+    pool = splitProportional(
+      debts.filter((d) => !d.isManuallySet),
+      pool,
+      (d) => Math.max(0, d.totalBalance ?? 0),
+      (d) => Math.max(0, (d.totalBalance ?? Infinity) - d.amount),
+      (d, amt) => {
+        d.amount += amt;
+      },
+    );
+  }
 
     // Whatever is left flows to unlocked savings goals via tiered priority.
   allocateSavingsTiered(
