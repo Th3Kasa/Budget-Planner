@@ -124,4 +124,10 @@ export interface BudgetState {
   windfalls?: Windfall[];
   centrelinkEnabled?: boolean; // undefined = true (legacy states)
   centrelinkMaxFortnightly?: number; // undefined = current JobSeeker single rate
+  // How the weekly surplus is split across debts:
+  //   "snowball"  → minimums on every debt, all extra to the smallest balance
+  //                 first, rolling into the next as each one clears (default).
+  //   "balanced"  → auto debts share the pool proportionally by balance, and
+  //                 leftover surplus flows on to savings goals.
+  debtStrategy?: "snowball" | "balanced"; // undefined = "snowball"
 }

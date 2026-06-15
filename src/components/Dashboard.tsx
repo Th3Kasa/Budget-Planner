@@ -605,6 +605,12 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     );
   };
 
+  const setDebtStrategy = (strategy: "snowball" | "balanced") => {
+    setState((prev) =>
+      calculateAutoAllocation({ ...prev, debtStrategy: strategy }),
+    );
+  };
+
   const resetDebtAllocation = (id: string) => {
     setState((prev) =>
       calculateAutoAllocation({
@@ -989,6 +995,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onReorderDebts={(a, b) => reorderItems("debts", a, b)}
               onUpdateDebtAmount={updateDebtAmount}
               onResetDebtAllocation={resetDebtAllocation}
+              debtStrategy={state.debtStrategy ?? "snowball"}
+              onSetDebtStrategy={setDebtStrategy}
               onRecordWindfall={handleRecordWindfall}
               onAdjustVault={handleAdjustVault}
               onUndoWindfall={handleUndoWindfall}

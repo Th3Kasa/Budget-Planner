@@ -73,6 +73,8 @@ interface HomeTabProps {
   onReorderDebts: (activeId: string, overId: string) => void;
   onUpdateDebtAmount: (id: string, amount: number) => void;
   onResetDebtAllocation: (id: string) => void;
+  debtStrategy: "snowball" | "balanced";
+  onSetDebtStrategy: (strategy: "snowball" | "balanced") => void;
   onRecordWindfall: (name: string, amount: number, priorities?: { debtId: string; amount: number }[]) => void;
   onAdjustVault: (newBalance: number) => void;
   onUndoWindfall: (id: string) => void;
@@ -130,6 +132,8 @@ export default function HomeTab({
   onReorderDebts,
   onUpdateDebtAmount,
   onResetDebtAllocation,
+  debtStrategy,
+  onSetDebtStrategy,
   onRecordWindfall,
   onAdjustVault,
   onUndoWindfall,
@@ -175,6 +179,15 @@ export default function HomeTab({
     totalWeeklyRepayments > 0 && totalDebtBalance > 0
       ? Math.ceil(totalDebtBalance / totalWeeklyRepayments)
       : 0;
+
+  // The debt the snowball is currently attacking: the smallest balance still
+  // owing. Highlighted in the list so it's clear where the extra money goes.
+  const snowballTargetId =
+    debtStrategy === "snowball"
+      ? state.debts
+          .filter((d) => (d.totalBalance ?? 0) > 0.01)
+          .sort((a, b) => (a.totalBalance ?? 0) - (b.totalBalance ?? 0))[0]?.id
+      : undefined;
 
   const closeWindfall = () => {
     setIsSellingAsset(false);
@@ -676,9 +689,46 @@ export default function HomeTab({
 
             {state.debts.length > 0 && (
               <div className="space-y-3 md:space-y-4 mt-6">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
-                  Debts
-                </h3>
+                <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                    Debts
+                  </h3>
+                  <div className="inline-flex items-center rounded-lg bg-gray-100 p-0.5 text-[11px] font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => onSetDebtStrategy("snowball")}
+                      className={cn(
+                        "px-2.5 py-1 rounded-md transition-colors",
+                        debtStrategy === "snowball"
+                          ? "bg-white text-indigo-600 shadow-sm"
+                          : "text-gray-500 hover:text-gray-700",
+                      )}
+                      title="Throw all spare cash at the smallest debt first, then roll it into the next"
+                    >
+                      ⛄ Snowball
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSetDebtStrategy("balanced")}
+                      className={cn(
+                        "px-2.5 py-1 rounded-md transition-colors",
+                        debtStrategy === "balanced"
+                          ? "bg-white text-indigo-600 shadow-sm"
+                          : "text-gray-500 hover:text-gray-700",
+                      )}
+                      title="Split spare cash across debts proportionally, leftover goes to savings"
+                    >
+                      ⚖️ Balanced
+                    </button>
+                  </div>
+                </div>
+                {debtStrategy === "snowball" && (
+                  <p className="text-[11px] text-gray-500 mb-2 leading-snug">
+                    Your set repayments are kept as minimums; every spare dollar
+                    is piled onto the smallest balance until it's gone, then
+                    rolls into the next.
+                  </p>
+                )}
                 <div className="flex justify-between items-center text-right mb-2">
                   <span className="text-xs text-gray-500 font-medium">
                     Total Debt Balance:{" "}
@@ -768,8 +818,13 @@ export default function HomeTab({
                                       {getIcon(item.icon || "credit-card")}
                                     </div>
                                     <div>
-                                      <h3 className="font-bold text-gray-900 line-clamp-1">
+                                      <h3 className="font-bold text-gray-900 line-clamp-1 flex items-center gap-1.5">
                                         {item.name}
+                                        {item.id === snowballTargetId && (
+                                          <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-700 bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                            ⛄ Focus
+                                          </span>
+                                        )}
                                       </h3>
                                       <p className="text-xs text-gray-500 flex items-center gap-1">
                                         {editingDebtId === item.id ? (
