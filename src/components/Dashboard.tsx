@@ -923,16 +923,43 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     }
   };
 
-  const handleAllocateFromVault = (goalId: string, amount: number) => {
-    setState((prev) => ({
-      ...prev,
-      savings: prev.savings.map((s) =>
-        s.id === goalId
-          ? { ...s, currentAmount: (s.currentAmount || 0) + amount }
-          : s,
-      ),
-      cashBalance: Math.max(0, (prev.cashBalance || 0) - amount),
-    }));
+  // One-off deployment of money toward a debt (knocks down its balance) or a
+  // savings goal (tops it up). Source "vault" draws from the banked Cash Vault;
+  // source "surplus" deploys this week's free surplus (a recurring weekly pool,
+  // so it isn't a stored balance to deduct from).
+  const allocateFunds = (
+    source: "vault" | "surplus",
+    target: { type: "debt" | "savings"; id: string },
+    amount: number,
+  ) => {
+    const amt = Math.max(0, amount);
+    if (amt <= 0) return;
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        debts: prev.debts.map((d) =>
+          target.type === "debt" &&
+          d.id === target.id &&
+          d.totalBalance !== undefined
+            ? { ...d, totalBalance: Math.max(0, d.totalBalance - amt) }
+            : d,
+        ),
+        savings: prev.savings.map((s) =>
+          target.type === "savings" && s.id === target.id
+            ? {
+                ...s,
+                currentAmount: Math.min(
+                  s.targetAmount || Infinity,
+                  (s.currentAmount || 0) + amt,
+                ),
+              }
+            : s,
+        ),
+        ...(source === "vault"
+          ? { cashBalance: Math.max(0, (prev.cashBalance || 0) - amt) }
+          : {}),
+      }),
+    );
   };
 
   // ----- Settings -----
@@ -1041,6 +1068,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onAdjustVault={handleAdjustVault}
               onUndoWindfall={handleUndoWindfall}
               onCommitWeek={handleCommitWeek}
+              onAllocateFunds={allocateFunds}
               savings={state.savings}
               onPaySavingsGoal={paySavingsGoal}
               onPayAllSavings={payAllSavings}

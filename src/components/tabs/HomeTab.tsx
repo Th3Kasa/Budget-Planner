@@ -55,6 +55,128 @@ const money = (v: number) =>
     maximumFractionDigits: 2,
   });
 
+// Compact inline form to deploy money — from the banked Cash Vault or this
+// week's free surplus — toward a debt balance or a savings goal.
+function AllocateForm({
+  source,
+  max,
+  debts,
+  savings,
+  onAllocate,
+  onClose,
+}: {
+  source: "vault" | "surplus";
+  max: number;
+  debts: BudgetElement[];
+  savings: SavingsGoal[];
+  onAllocate: (
+    source: "vault" | "surplus",
+    target: { type: "debt" | "savings"; id: string },
+    amount: number,
+  ) => void;
+  onClose: () => void;
+}) {
+  const targets = [
+    ...debts
+      .filter((d) => (d.totalBalance ?? 0) > 0.01)
+      .map((d) => ({
+        key: `debt:${d.id}`,
+        type: "debt" as const,
+        id: d.id,
+        label: `💳 ${d.name}`,
+        room: d.totalBalance ?? Infinity,
+      })),
+    ...savings
+      .filter((s) => s.targetAmount <= 0 || (s.currentAmount ?? 0) < s.targetAmount)
+      .map((s) => ({
+        key: `savings:${s.id}`,
+        type: "savings" as const,
+        id: s.id,
+        label: `🎯 ${s.name}`,
+        room:
+          s.targetAmount > 0 ? s.targetAmount - (s.currentAmount ?? 0) : Infinity,
+      })),
+  ];
+  const [targetKey, setTargetKey] = useState(targets[0]?.key ?? "");
+  const [amount, setAmount] = useState("");
+  const selected = targets.find((t) => t.key === targetKey) ?? targets[0];
+
+  if (targets.length === 0) {
+    return (
+      <div className="bg-white p-4 rounded-2xl border border-emerald-100 text-sm text-gray-500 flex justify-between items-center">
+        <span>No open debts or goals to allocate to.</span>
+        <button type="button" onClick={onClose} aria-label="Close" className="text-gray-400 hover:text-gray-600">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+
+  const cap = Math.min(max, selected?.room ?? max);
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selected) return;
+    const amt = Math.min(Number(amount) || 0, cap);
+    if (amt <= 0) return;
+    onAllocate(source, { type: selected.type, id: selected.id }, amt);
+    onClose();
+  };
+
+  return (
+    <form onSubmit={submit} className="bg-white p-5 rounded-2xl shadow-sm border border-emerald-100 space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="font-bold text-gray-800">
+          Allocate {source === "vault" ? "from Vault" : "Surplus"}
+        </h3>
+        <button type="button" onClick={onClose} aria-label="Close" className="text-gray-400 hover:text-gray-600 bg-gray-50 rounded-lg p-1">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-gray-500 mb-1 block uppercase tracking-wider">
+          Send to
+        </label>
+        <select
+          value={targetKey}
+          onChange={(e) => setTargetKey(e.target.value)}
+          className="w-full text-sm px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-emerald-400 focus:bg-white"
+        >
+          {targets.map((t) => (
+            <option key={t.key} value={t.key}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="text-xs font-semibold text-gray-500 mb-1 block uppercase tracking-wider">
+          Amount (max ${money(cap)})
+        </label>
+        <div className="relative">
+          <span className="absolute left-4 top-2.5 text-gray-500 font-medium">$</span>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            max={cap}
+            placeholder="0.00"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            required
+            className="w-full text-sm pl-8 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-emerald-400 focus:bg-white"
+          />
+        </div>
+      </div>
+      <button
+        type="submit"
+        className="w-full bg-emerald-500 text-white font-bold py-3 rounded-xl hover:bg-emerald-600 transition-all text-sm md:text-base"
+      >
+        Allocate
+      </button>
+    </form>
+  );
+}
+
 interface HomeTabProps {
   state: BudgetState;
   summary: IncomeSummary;
@@ -83,6 +205,11 @@ interface HomeTabProps {
   savings: SavingsGoal[];
   onPaySavingsGoal: (id: string) => void;
   onPayAllSavings: () => void;
+  onAllocateFunds: (
+    source: "vault" | "surplus",
+    target: { type: "debt" | "savings"; id: string },
+    amount: number,
+  ) => void;
 }
 
 type SortableHandleProps = Pick<ReturnType<typeof useSortable>, "attributes" | "listeners">;
@@ -144,6 +271,7 @@ export default function HomeTab({
   savings,
   onPaySavingsGoal,
   onPayAllSavings,
+  onAllocateFunds,
 }: HomeTabProps) {
   const [isSellingAsset, setIsSellingAsset] = useState(false);
   const [windfallStep, setWindfallStep] = useState<"enter" | "allocate">("enter");
@@ -156,6 +284,8 @@ export default function HomeTab({
   const [editingDebtValue, setEditingDebtValue] = useState("");
   const [commitState, setCommitState] = useState<"idle" | "loading" | "done">("idle");
   const [savingsOpen, setSavingsOpen] = useState(false);
+  const [isAllocatingVault, setIsAllocatingVault] = useState(false);
+  const [isAllocatingSurplus, setIsAllocatingSurplus] = useState(false);
 
   const centrelinkEnabled = state.centrelinkEnabled !== false;
   const cashBalance = state.cashBalance || 0;
@@ -990,6 +1120,48 @@ export default function HomeTab({
           </div>
         </div>
 
+        {/* Free Surplus — this week's leftover, live */}
+        {weeklySurplus > 0.01 && (
+          <div className="glass-card mb-6 p-4 md:p-6 border border-blue-100 bg-gradient-to-br from-blue-50/50 to-indigo-50/50 relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10">
+              <TrendingUp className="w-24 h-24" />
+            </div>
+            <div className="flex justify-between items-start mb-6 relative">
+              <div>
+                <h2 className="text-base md:text-xl font-bold text-gray-900">
+                  Free Surplus
+                </h2>
+                <p className="text-sm text-gray-600">
+                  Spare cash this week after debts &amp; goals
+                </p>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl md:text-3xl font-bold text-blue-600 drop-shadow-sm">
+                  ${money(weeklySurplus)}
+                  <span className="text-sm font-medium text-gray-400">/wk</span>
+                </div>
+              </div>
+            </div>
+            {isAllocatingSurplus ? (
+              <AllocateForm
+                source="surplus"
+                max={weeklySurplus}
+                debts={state.debts}
+                savings={savings}
+                onAllocate={onAllocateFunds}
+                onClose={() => setIsAllocatingSurplus(false)}
+              />
+            ) : (
+              <button
+                onClick={() => setIsAllocatingSurplus(true)}
+                className="w-full flex items-center justify-center gap-2 bg-white text-blue-700 border border-blue-200 hover:bg-blue-50 hover:border-blue-300 transition-colors font-bold py-3 text-sm md:text-base rounded-xl shadow-sm"
+              >
+                <Plus className="w-4 h-4 md:w-5 md:h-5" /> Allocate Surplus
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Cash Vault */}
         <div className="glass-card mb-6 p-4 md:p-6 border border-emerald-100 bg-gradient-to-br from-emerald-50/50 to-teal-50/50 relative overflow-hidden">
           <div className="absolute top-0 right-0 p-4 opacity-10">
@@ -1011,7 +1183,7 @@ export default function HomeTab({
             </div>
           </div>
 
-          {!isSellingAsset && !isAdjustingVault ? (
+          {!isSellingAsset && !isAdjustingVault && !isAllocatingVault ? (
             <div className="flex gap-2 w-full">
               <button
                 onClick={() => { setIsSellingAsset(true); setWindfallStep("enter"); }}
@@ -1019,6 +1191,15 @@ export default function HomeTab({
               >
                 <Plus className="w-4 h-4 md:w-5 md:h-5" /> Record Windfall
               </button>
+              {cashBalance > 0.01 && (
+                <button
+                  onClick={() => setIsAllocatingVault(true)}
+                  className="flex-1 relative flex items-center justify-center gap-2 bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300 transition-colors font-bold py-3 text-sm md:text-base rounded-xl shadow-sm"
+                  title="Put vault money toward a debt or goal"
+                >
+                  <CheckCircle2 className="w-4 h-4 md:w-5 md:h-5" /> Allocate
+                </button>
+              )}
               <button
                 onClick={() => {
                   setIsAdjustingVault(true);
@@ -1030,6 +1211,15 @@ export default function HomeTab({
                 <Edit2 className="w-4 h-4 md:w-5 md:h-5" />
               </button>
             </div>
+          ) : isAllocatingVault ? (
+            <AllocateForm
+              source="vault"
+              max={cashBalance}
+              debts={state.debts}
+              savings={savings}
+              onAllocate={onAllocateFunds}
+              onClose={() => setIsAllocatingVault(false)}
+            />
           ) : isAdjustingVault ? (
             <form
               onSubmit={handleAdjustVault}
