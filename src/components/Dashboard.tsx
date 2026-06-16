@@ -371,7 +371,13 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       ...emptyItemFields(),
       name: anyItem.name || "",
       amount: String(
-        (type === "savings" ? anyItem.weeklyContribution : anyItem.amount) ?? "",
+        type === "savings"
+          ? anyItem.weeklyContribution ?? ""
+          : // Auto-balanced debts show a blank repayment so editing them
+            // (e.g. the name) doesn't accidentally pin the computed amount.
+            type === "debt" && !anyItem.isManuallySet
+            ? ""
+            : anyItem.amount ?? "",
       ),
       frequency: anyItem.frequency || "weekly",
       targetAmount: String(anyItem.targetAmount || ""),
@@ -379,6 +385,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       totalBalance: String(anyItem.originalBalance || anyItem.totalBalance || ""),
       category: anyItem.category || "General",
       priorityTier: String(anyItem.priorityTier ?? 3),
+      debtPriority: String(anyItem.debtPriority ?? 2),
       type: anyItem.type || "casual",
       isCash: anyItem.isCash || false,
       hourlyRate: String(anyItem.hourlyRate || ""),
@@ -413,6 +420,10 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     if (newItemType === "expense" || newItemType === "debt") {
       const isDebt = newItemType === "debt";
       const collectionName = isDebt ? "debts" : "expenses";
+      // A debt with ANY repayment entered is "pinned" (manual) — including an
+      // explicit 0, which pauses it (gets nothing). Left blank, it's
+      // auto-balanced by the allocation engine like the other auto debts.
+      const debtPinned = isDebt && fields.amount.trim() !== "";
       const itemToSave: BudgetElement = {
         id: editingItemId || Date.now().toString(),
         name: fields.name,
@@ -425,6 +436,9 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         category: isDebt ? "Debt" : fields.category,
         color: isDebt ? "#ef4444" : "#f59e0b",
         icon: isDebt ? "credit-card" : "receipt",
+        debtPriority: isDebt
+          ? ((Number(fields.debtPriority) || 2) as 1 | 2 | 3)
+          : undefined,
       };
 
       setState((prev) => {
@@ -434,12 +448,12 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
             ? prev[collectionName].map((item) =>
                 item.id === editingItemId
                   ? isDebt
-                    ? { ...itemToSave, color: item.color, icon: item.icon, isManuallySet: true }
+                    ? { ...itemToSave, color: item.color, icon: item.icon, isManuallySet: debtPinned }
                     : { ...itemToSave, color: item.color, icon: item.icon }
                   : item,
               )
             : isDebt
-              ? [...prev[collectionName], { ...itemToSave, isManuallySet: true }]
+              ? [...prev[collectionName], { ...itemToSave, isManuallySet: debtPinned }]
               : [...prev[collectionName], itemToSave],
         };
         return calculateAutoAllocation(nextState);
@@ -576,6 +590,21 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           : d,
       ),
     }));
+  };
+
+  // Apply every debt's weekly repayment at once, then re-run allocation so a
+  // debt that just cleared hands its budget to the next one automatically.
+  const payAllDebts = () => {
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        debts: prev.debts.map((d) =>
+          d.totalBalance !== undefined
+            ? { ...d, totalBalance: Math.max(0, d.totalBalance - d.amount) }
+            : d,
+        ),
+      }),
+    );
   };
 
   const reorderItems = (
@@ -991,6 +1020,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onRemoveIncome={removeIncome}
               onRemoveItem={removeItem}
               onPayDebt={payDebt}
+              onPayAllDebts={payAllDebts}
               onReorderExpenses={(a, b) => reorderItems("expenses", a, b)}
               onReorderDebts={(a, b) => reorderItems("debts", a, b)}
               onUpdateDebtAmount={updateDebtAmount}

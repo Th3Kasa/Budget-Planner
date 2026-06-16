@@ -32,6 +32,7 @@ export interface NewItemFields {
   useShifts: boolean;
   shifts: ShiftFields[];
   priorityTier: string; // "1" | "2" | "3" — only used for savings goals
+  debtPriority: string; // "1" | "2" | "3" — only used for debts (payoff order)
   grossPay: string; // payslip income only
   taxWithheld: string; // payslip income only
   superAmount: string; // payslip income only
@@ -64,6 +65,7 @@ export const emptyItemFields = (): NewItemFields => ({
   hoursWorked: "",
   useShifts: false,
   priorityTier: "3",
+  debtPriority: "2",
   grossPay: "",
   taxWithheld: "",
   superAmount: "",
@@ -161,8 +163,9 @@ export default function AddItemModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!item.name) return;
-    // Savings goals don't require a weekly contribution (engine auto-allocates)
-    if (itemType !== "income" && itemType !== "savings" && !item.amount) return;
+    // Only expenses require an amount. Savings and debts may be left blank so
+    // the allocation engine auto-balances them.
+    if (itemType === "expense" && !item.amount) return;
     if (itemType === "income") {
       if (item.type === "fixed" && !item.amount) return;
       if (item.type === "payslip" && !item.grossPay) return;
@@ -518,21 +521,29 @@ export default function AddItemModal({
                     ? "Weekly Contribution ($)"
                     : itemType === "expense"
                       ? `${item.frequency === "monthly" ? "Monthly" : "Weekly"} Amount ($)`
-                      : "Weekly Amount ($)"}
-                  {itemType === "savings" && (
-                    <span className="text-gray-400 font-normal ml-1">(Optional — auto-allocated if blank)</span>
+                      : "Weekly Repayment ($)"}
+                  {(itemType === "savings" || itemType === "debt") && (
+                    <span className="text-gray-400 font-normal ml-1">(Optional — auto-balanced if blank)</span>
                   )}
                 </label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
-                  required={itemType !== "savings"}
+                  required={itemType === "expense"}
                   value={item.amount}
                   onChange={(e) => set({ amount: e.target.value })}
                   className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                   placeholder="0.00"
                 />
+                {itemType === "debt" && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Leave blank to auto-balance it from your surplus. Enter an
+                    amount to pin it (the rest balance around it), or enter
+                    <span className="font-medium"> 0</span> to pause it — it
+                    gets nothing.
+                  </p>
+                )}
                 {itemType === "expense" && item.frequency === "monthly" && item.amount && (
                   <p className="text-xs text-gray-500 mt-1">
                     ≈ ${(Number(item.amount) / (52 / 12)).toFixed(2)}/wk in budget
@@ -554,6 +565,27 @@ export default function AddItemModal({
                     className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                     placeholder="e.g. 5000"
                   />
+                </div>
+              )}
+              {itemType === "debt" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 mt-2">
+                    Payoff Priority
+                  </label>
+                  <select
+                    value={item.debtPriority}
+                    onChange={(e) => set({ debtPriority: e.target.value })}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
+                  >
+                    <option value="1">Priority — pay off first</option>
+                    <option value="2">Normal (default)</option>
+                    <option value="3">Can wait — pay off last</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Used by the <span className="font-medium">Priority</span>{" "}
+                    payoff strategy: the whole debt budget clears all Priority
+                    debts first, then Normal, then the rest.
+                  </p>
                 </div>
               )}
               {itemType === "savings" && (

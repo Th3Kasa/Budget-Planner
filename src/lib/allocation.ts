@@ -109,16 +109,27 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
   );
   let pool = Math.max(0, totalNetIncome - totalExpenses);
 
-  // Manually-set debts and locked savings keep their amounts (capped by
-  // the pool so we never allocate money that doesn't exist).
+  // Auto (non-pinned) debts start at 0; the strategy below fills them.
   for (const d of debts) {
-    if (d.isManuallySet) {
-      d.amount = Math.min(d.amount, Math.max(0, d.totalBalance ?? 0), pool);
-      d.amount = Math.max(0, d.amount);
-      pool -= d.amount;
-    } else {
-      d.amount = 0;
-    }
+    if (!d.isManuallySet) d.amount = 0;
+  }
+  // Manually-set debts keep the amount the user chose, capped by the pool so we
+  // never allocate money that doesn't exist. When the pool can't cover every
+  // pinned debt, fund them in priority order (then smallest balance first) so
+  // the most important pinned debts win rather than whoever is last in the list.
+  const pinnedByPriority = debts
+    .filter((d) => d.isManuallySet)
+    .sort(
+      (a, b) =>
+        (a.debtPriority ?? 2) - (b.debtPriority ?? 2) ||
+        (a.totalBalance ?? 0) - (b.totalBalance ?? 0),
+    );
+  for (const d of pinnedByPriority) {
+    d.amount = Math.max(
+      0,
+      Math.min(d.amount, Math.max(0, d.totalBalance ?? 0), pool),
+    );
+    pool -= d.amount;
   }
   for (const s of savings) {
     if (s.isLocked) {
@@ -131,7 +142,8 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
 
   // Remaining pool is split across debts according to the chosen strategy.
   // (Manual amounts above act as each debt's minimum payment either way.)
-  if ((prevState.debtStrategy ?? "snowball") === "snowball") {
+  const strategy = prevState.debtStrategy ?? "snowball";
+  if (strategy === "snowball") {
     // Debt snowball: every debt keeps getting a fair, even minimum, but the
     // bulk of the surplus is hurled at the SMALLEST balance so it clears
     // fastest — then rolls into the next once it's gone. Manual amounts above
@@ -176,6 +188,25 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
       d.amount += add;
       pool -= add;
     }
+  } else if (strategy === "priority") {
+    // Priority groups: the whole debt budget clears the highest-priority group
+    // first, paid in parallel (proportional to balance, so they finish around
+    // the same time), then rolls to the next group once the current one is
+    // covered. Manual amounts above are honoured as fixed payments; this
+    // distributes the rest across the AUTO debts by priority tier.
+    const prio = (d: BudgetElement) => d.debtPriority ?? 2;
+    for (const tier of [1, 2, 3] as const) {
+      if (pool <= 0.01) break;
+      pool = splitProportional(
+        debts.filter((d) => !d.isManuallySet && prio(d) === tier),
+        pool,
+        (d) => Math.max(0, d.totalBalance ?? 0),
+        (d) => Math.max(0, (d.totalBalance ?? 0) - d.amount),
+        (d, amt) => {
+          d.amount += amt;
+        },
+      );
+    }
   } else {
     // Balanced: auto debts share the pool proportionally by outstanding
     // balance, and any leftover flows on to savings goals below.
@@ -190,21 +221,26 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
     );
   }
 
-    // Whatever is left flows to unlocked savings goals via tiered priority.
-  allocateSavingsTiered(
-    savings.filter((s) => !s.isLocked),
-    pool,
-    (s) =>
-      s.targetAmount > 0
-        ? Math.max(
-            0,
-            s.targetAmount - (s.currentAmount || 0) - s.weeklyContribution,
-          )
-        : Infinity,
-    (s, amt) => {
-      s.weeklyContribution += amt;
-    },
-  );
+  // Whatever is left flows to unlocked savings goals via tiered priority —
+  // except under the "priority" strategy, where every spare dollar stays on
+  // debts until they're all cleared, leaving the rest as free surplus the
+  // user assigns to savings themselves.
+  if (strategy !== "priority") {
+    allocateSavingsTiered(
+      savings.filter((s) => !s.isLocked),
+      pool,
+      (s) =>
+        s.targetAmount > 0
+          ? Math.max(
+              0,
+              s.targetAmount - (s.currentAmount || 0) - s.weeklyContribution,
+            )
+          : Infinity,
+      (s, amt) => {
+        s.weeklyContribution += amt;
+      },
+    );
+  }
 
   return { ...prevState, debts, savings };
 }
