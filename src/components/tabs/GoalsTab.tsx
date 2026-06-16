@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Edit2, Plus, RotateCcw, Star, Target, Trash2 } from "lucide-react";
+import { CheckCircle2, Edit2, Plus, RotateCcw, Star, Target, Trash2 } from "lucide-react";
 import { SavingsGoal } from "../../types";
 
 const money = (v: number) =>
@@ -19,6 +19,7 @@ interface GoalsTabProps {
   onLockSavingsGoal: (id: string, amount: number) => void;
   onUnlockSavingsGoal: (id: string) => void;
   onPaySavingsGoal: (id: string) => void;
+  onPayAllSavings: () => void;
 }
 
 export default function GoalsTab({
@@ -32,6 +33,7 @@ export default function GoalsTab({
   onLockSavingsGoal,
   onUnlockSavingsGoal,
   onPaySavingsGoal,
+  onPayAllSavings,
 }: GoalsTabProps) {
   const [editingWeightId, setEditingWeightId] = useState<string | null>(null);
   const [editingWeightValue, setEditingWeightValue] = useState("");
@@ -159,6 +161,19 @@ export default function GoalsTab({
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {savings.some(
+              (s) =>
+                (s.weeklyContribution || 0) > 0 &&
+                (s.currentAmount || 0) < (s.targetAmount || 0),
+            ) && (
+              <button
+                onClick={onPayAllSavings}
+                className="flex items-center justify-center gap-1.5 text-sm bg-blue-600 text-white font-semibold px-4 py-2.5 rounded-xl hover:bg-blue-700 transition"
+                title="Add every goal's weekly contribution at once"
+              >
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> Pay All
+              </button>
+            )}
             <button
               onClick={onRecalculateSavings}
               className="flex items-center justify-center gap-1.5 text-sm bg-white border border-gray-200 text-gray-600 font-semibold px-4 py-2.5 rounded-xl hover:bg-gray-50 hover:text-indigo-600 hover:border-indigo-200 transition"

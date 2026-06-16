@@ -125,14 +125,23 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
   // If the locked repayments exceed the surplus there's nothing left to spread.
   // (The shortfall surfaces as a negative surplus in the UI, not here.)
   pool = Math.max(0, pool);
+  // Locked savings goals work exactly like manual debts: the contribution the
+  // user set is kept to the cent (capped only at the gap to that goal's target,
+  // since you'd never contribute past 100%). Locking one goal therefore never
+  // shrinks another — only the auto goals rebalance around them.
   for (const s of savings) {
     if (s.isLocked) {
-      s.weeklyContribution = Math.min(pool, s.weeklyContribution || 0);
+      const gap =
+        s.targetAmount > 0
+          ? Math.max(0, s.targetAmount - (s.currentAmount || 0))
+          : Infinity;
+      s.weeklyContribution = Math.max(0, Math.min(s.weeklyContribution || 0, gap));
       pool -= s.weeklyContribution;
     } else {
       s.weeklyContribution = 0;
     }
   }
+  pool = Math.max(0, pool);
 
   // Remaining pool is split across debts according to the chosen strategy.
   // (Manual amounts above act as each debt's minimum payment either way.)
