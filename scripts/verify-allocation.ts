@@ -1,9 +1,10 @@
 // Sanity checks for the allocation engine and tax calculators.
 // Run: npx tsx scripts/verify-allocation.ts
 import { calculateAutoAllocation, distributeWindfall, undoWindfall } from "../src/lib/allocation.ts";
-import { summarizeIncome } from "../src/lib/income.ts";
+import { summarizeIncome, isIncomeActive } from "../src/lib/income.ts";
 import { calculateWeeklyTax, calculateCentrelink, getCurrentFinancialYear } from "../src/lib/calculators.ts";
-import { BudgetState } from "../src/types.ts";
+import { parsePayslip } from "../src/lib/payslip/parsePayslip.ts";
+import { BudgetState, IncomeStream } from "../src/types.ts";
 
 let failures = 0;
 const check = (label: string, cond: boolean, detail = "") => {
@@ -325,6 +326,36 @@ const annual = (gross: number, fy: "2025-26" | "2026-27") => {
   check("JobSeeker: $75/wk earned = full $808.70/fn", approx(calculateCentrelink(75).fortnightlyPayment, 808.7));
   check("JobSeeker: $200/wk earned = $669.30/fn", approx(calculateCentrelink(200).fortnightlyPayment, 669.3), `got ${calculateCentrelink(200).fortnightlyPayment.toFixed(2)}`);
   check("JobSeeker: high income = $0", approx(calculateCentrelink(800).fortnightlyPayment, 0));
+}
+
+// --- Payslip activation: must be anchored to a week ---
+{
+  const week = "2026-06-15";
+  const anchored: IncomeStream = { id: "p1", name: "Slip", type: "payslip", grossPay: 1000, weekStarting: week };
+  const otherWeek: IncomeStream = { id: "p2", name: "Slip", type: "payslip", grossPay: 1000, weekStarting: "2026-06-08" };
+  const unanchored: IncomeStream = { id: "p3", name: "Slip", type: "payslip", grossPay: 1000 };
+  const casual: IncomeStream = { id: "c1", name: "Job", type: "casual", hourlyRate: 30, hoursWorked: 10 };
+  check("payslip active in its own week", isIncomeActive(anchored, week) === true);
+  check("payslip inactive in another week", isIncomeActive(otherWeek, week) === false);
+  check("unanchored payslip is inactive (no longer counts forever)", isIncomeActive(unanchored, week) === false);
+  check("non-payslip income is always active", isIncomeActive(casual, week) === true);
+}
+
+// --- Payslip parser: whole-dollar amounts (no cents) must still parse ---
+{
+  const wholeDollar = parsePayslip([
+    "Acme Pty Ltd",
+    "GROSS PAY: $1,200",
+    "PAYG Withholding 300",
+    "NET PAY: $900",
+    "Super Guarantee $144",
+  ]);
+  check("parses whole-dollar gross", wholeDollar.gross === 1200, `gross=${wholeDollar.gross}`);
+  check("parses whole-dollar tax", wholeDollar.tax === 300, `tax=${wholeDollar.tax}`);
+  check("parses whole-dollar net", wholeDollar.net === 900, `net=${wholeDollar.net}`);
+
+  const withCents = parsePayslip(["GROSS PAY $1,234.56", "PAYG Withholding $123.45"]);
+  check("still parses cents amounts", withCents.gross === 1234.56 && withCents.tax === 123.45, `gross=${withCents.gross} tax=${withCents.tax}`);
 }
 
 console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) FAILED.`);
