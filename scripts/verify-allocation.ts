@@ -205,6 +205,86 @@ const base: BudgetState = {
   check("snowball: smallest debt fully funded then rolls into next", approx(zip.amount, 200) && approx(card.amount, 800), `zip=${zip.amount.toFixed(2)} card=${card.amount.toFixed(2)}`);
 }
 
+// --- Test 6e: manual repayments are LOCKED and never affect each other ---
+{
+  // The exact scenario reported: pin the Car at $132 and the Wedding at $500.
+  // $2,000/wk cash − $300 rent = $1,700 surplus. Each manual amount must be
+  // kept to the cent; only the auto debt (credit card) absorbs the remainder.
+  const manual: BudgetState = {
+    ...base,
+    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 2000, isCash: true }],
+    debts: [
+      { id: "car", name: "Car Loan", amount: 132, totalBalance: 5000, originalBalance: 5000, category: "Debt", isManuallySet: true },
+      { id: "wed", name: "David Wedding", amount: 500, totalBalance: 8000, originalBalance: 8000, category: "Debt", isManuallySet: true },
+      { id: "cc", name: "Credit Card", amount: 0, totalBalance: 2000, originalBalance: 2000, category: "Debt" },
+    ],
+    savings: [],
+  };
+  const out = calculateAutoAllocation(manual);
+  const get = (id: string) => out.debts.find((d) => d.id === id)!;
+  const car = get("car"), wed = get("wed"), cc = get("cc");
+  check("manual: pinned Car stays exactly $132", approx(car.amount, 132), `car=${car.amount.toFixed(2)}`);
+  check("manual: pinned Wedding stays exactly $500 (doesn't shift the Car)", approx(wed.amount, 500), `wed=${wed.amount.toFixed(2)}`);
+  check("manual: only the auto debt absorbs the rest", approx(cc.amount, 1700 - 132 - 500), `cc=${cc.amount.toFixed(2)}`);
+}
+
+// --- Test 6f: manual debts over-committing the surplus are still kept exact ---
+{
+  // $400/wk cash − $300 rent = $100 surplus, but two pinned debts want $632.
+  // Manual amounts are sacred: both keep their full value (the shortfall shows
+  // up as a negative surplus in the UI), and the auto debt simply gets nothing.
+  const overcommit: BudgetState = {
+    ...base,
+    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 400, isCash: true }],
+    debts: [
+      { id: "car", name: "Car Loan", amount: 132, totalBalance: 5000, originalBalance: 5000, category: "Debt", isManuallySet: true },
+      { id: "wed", name: "David Wedding", amount: 500, totalBalance: 8000, originalBalance: 8000, category: "Debt", isManuallySet: true },
+      { id: "cc", name: "Credit Card", amount: 0, totalBalance: 2000, originalBalance: 2000, category: "Debt" },
+    ],
+    savings: [],
+  };
+  const out = calculateAutoAllocation(overcommit);
+  const get = (id: string) => out.debts.find((d) => d.id === id)!;
+  check("manual: pinned amounts kept exact even when over budget", approx(get("car").amount, 132) && approx(get("wed").amount, 500), `car=${get("car").amount.toFixed(2)} wed=${get("wed").amount.toFixed(2)}`);
+  check("manual: auto debt gets nothing when surplus is exhausted (no negatives)", approx(get("cc").amount, 0), `cc=${get("cc").amount.toFixed(2)}`);
+}
+
+// --- Test 7: locked savings goals work exactly like manual debts ---
+{
+  // $1,000 net − $300 rent = $700 surplus, no debts. Lock the Holiday goal at
+  // $250/wk; the Emergency Fund (auto) should soak up the rest, and locking one
+  // goal must never shrink the locked amount.
+  const locked: BudgetState = {
+    ...base,
+    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 1000, isCash: true }],
+    debts: [],
+    savings: [
+      { id: "hol", name: "Holiday", targetAmount: 5000, currentAmount: 0, weeklyContribution: 250, isLocked: true },
+      { id: "em", name: "Emergency Fund", targetAmount: 5000, currentAmount: 0, weeklyContribution: 0 },
+    ],
+  };
+  const out = calculateAutoAllocation(locked);
+  const hol = out.savings.find((s) => s.id === "hol")!;
+  const em = out.savings.find((s) => s.id === "em")!;
+  check("savings: locked goal kept exactly at $250", approx(hol.weeklyContribution, 250), `hol=${hol.weeklyContribution.toFixed(2)}`);
+  check("savings: auto goal absorbs the remaining surplus", approx(em.weeklyContribution, 450), `em=${em.weeklyContribution.toFixed(2)}`);
+}
+
+// --- Test 7b: locked savings capped at the gap to target, not the pool ---
+{
+  // Goal needs only $80 more to hit target but is locked at $300/wk: the
+  // contribution is trimmed to the $80 gap (never over-funds past 100%).
+  const nearlyDone: BudgetState = {
+    ...base,
+    debts: [],
+    savings: [
+      { id: "g", name: "Almost There", targetAmount: 1000, currentAmount: 920, weeklyContribution: 300, isLocked: true },
+    ],
+  };
+  const out = calculateAutoAllocation(nearlyDone);
+  check("savings: locked contribution capped at gap to target", approx(out.savings[0].weeklyContribution, 80), `g=${out.savings[0].weeklyContribution.toFixed(2)}`);
+}
+
 // --- Calculator checks (annual figures verified against ATO 2025-26 / 2026-27) ---
 const annual = (gross: number, fy: "2025-26" | "2026-27") => {
   const r = calculateWeeklyTax(gross / 52, fy);
