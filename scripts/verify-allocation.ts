@@ -205,6 +205,52 @@ const base: BudgetState = {
   check("snowball: smallest debt fully funded then rolls into next", approx(zip.amount, 200) && approx(card.amount, 800), `zip=${zip.amount.toFixed(2)} card=${card.amount.toFixed(2)}`);
 }
 
+// --- Test 6e (priority): clears the priority group first, then rolls onward ---
+{
+  // $1,800/wk cash income (untaxed) − $300 rent = $1,500 debt budget.
+  const priority: BudgetState = {
+    ...base,
+    debtStrategy: "priority",
+    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 1800, isCash: true }],
+    debts: [
+      { id: "s1", name: "Afterpay", amount: 0, totalBalance: 200, originalBalance: 200, category: "Debt", debtPriority: 1 },
+      { id: "s2", name: "Zip", amount: 0, totalBalance: 300, originalBalance: 300, category: "Debt", debtPriority: 1 },
+      { id: "med", name: "Personal Loan", amount: 0, totalBalance: 2000, originalBalance: 2000, category: "Debt", debtPriority: 2 },
+      { id: "big", name: "Car Loan", amount: 0, totalBalance: 5000, originalBalance: 5000, category: "Debt", debtPriority: 3 },
+    ],
+    savings: [{ id: "em", name: "Emergency Fund", targetAmount: 5000, currentAmount: 0, weeklyContribution: 0 }],
+  };
+  const out = calculateAutoAllocation(priority);
+  const get = (id: string) => out.debts.find((d) => d.id === id)!;
+  const s1 = get("s1"), s2 = get("s2"), med = get("med"), big = get("big");
+  // Priority group (s1+s2 = $500) is fully covered first — they finish together.
+  check("priority: priority group fully funded", approx(s1.amount, 200) && approx(s2.amount, 300), `s1=${s1.amount.toFixed(2)} s2=${s2.amount.toFixed(2)}`);
+  // Remaining $1,000 rolls to the next group (med); the last group (big) waits.
+  check("priority: leftover rolls to the next group", approx(med.amount, 1000), `med=${med.amount.toFixed(2)}`);
+  check("priority: lowest-priority debt waits", approx(big.amount, 0), `big=${big.amount.toFixed(2)}`);
+  // Savings get nothing while any debt remains under the priority strategy.
+  check("priority: savings stay as free surplus (no auto-fill)", approx(out.savings[0].weeklyContribution, 0), `em=${out.savings[0].weeklyContribution.toFixed(2)}`);
+}
+
+// --- Test 6f: pinned debts over-committing the pool are funded by priority ---
+{
+  // $500/wk cash − $300 rent = $200 pool, but two pinned debts want $150 each.
+  const overcommit: BudgetState = {
+    ...base,
+    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 500, isCash: true }],
+    debts: [
+      { id: "low", name: "Can-wait", amount: 150, totalBalance: 1000, originalBalance: 1000, category: "Debt", isManuallySet: true, debtPriority: 3 },
+      { id: "high", name: "Priority", amount: 150, totalBalance: 1000, originalBalance: 1000, category: "Debt", isManuallySet: true, debtPriority: 1 },
+    ],
+    savings: [],
+  };
+  const out = calculateAutoAllocation(overcommit);
+  const high = out.debts.find((d) => d.id === "high")!;
+  const low = out.debts.find((d) => d.id === "low")!;
+  check("pinned: higher-priority debt funded first when pool is tight", approx(high.amount, 150) && approx(low.amount, 50), `high=${high.amount.toFixed(2)} low=${low.amount.toFixed(2)}`);
+  check("pinned: total never exceeds the pool", high.amount + low.amount <= 200.01, `total=${(high.amount + low.amount).toFixed(2)}`);
+}
+
 // --- Calculator checks (annual figures verified against ATO 2025-26 / 2026-27) ---
 const annual = (gross: number, fy: "2025-26" | "2026-27") => {
   const r = calculateWeeklyTax(gross / 52, fy);
