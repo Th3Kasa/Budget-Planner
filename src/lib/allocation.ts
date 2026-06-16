@@ -131,7 +131,8 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
 
   // Remaining pool is split across debts according to the chosen strategy.
   // (Manual amounts above act as each debt's minimum payment either way.)
-  if ((prevState.debtStrategy ?? "snowball") === "snowball") {
+  const strategy = prevState.debtStrategy ?? "snowball";
+  if (strategy === "snowball") {
     // Debt snowball: every debt keeps getting a fair, even minimum, but the
     // bulk of the surplus is hurled at the SMALLEST balance so it clears
     // fastest — then rolls into the next once it's gone. Manual amounts above
@@ -176,6 +177,25 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
       d.amount += add;
       pool -= add;
     }
+  } else if (strategy === "priority") {
+    // Priority groups: the whole debt budget clears the highest-priority group
+    // first, paid in parallel (proportional to balance, so they finish around
+    // the same time), then rolls to the next group once the current one is
+    // covered. Manual amounts above are honoured as fixed payments; this
+    // distributes the rest across the AUTO debts by priority tier.
+    const prio = (d: BudgetElement) => d.debtPriority ?? 2;
+    for (const tier of [1, 2, 3] as const) {
+      if (pool <= 0.01) break;
+      pool = splitProportional(
+        debts.filter((d) => !d.isManuallySet && prio(d) === tier),
+        pool,
+        (d) => Math.max(0, d.totalBalance ?? 0),
+        (d) => Math.max(0, (d.totalBalance ?? 0) - d.amount),
+        (d, amt) => {
+          d.amount += amt;
+        },
+      );
+    }
   } else {
     // Balanced: auto debts share the pool proportionally by outstanding
     // balance, and any leftover flows on to savings goals below.
@@ -190,21 +210,26 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
     );
   }
 
-    // Whatever is left flows to unlocked savings goals via tiered priority.
-  allocateSavingsTiered(
-    savings.filter((s) => !s.isLocked),
-    pool,
-    (s) =>
-      s.targetAmount > 0
-        ? Math.max(
-            0,
-            s.targetAmount - (s.currentAmount || 0) - s.weeklyContribution,
-          )
-        : Infinity,
-    (s, amt) => {
-      s.weeklyContribution += amt;
-    },
-  );
+  // Whatever is left flows to unlocked savings goals via tiered priority —
+  // except under the "priority" strategy, where every spare dollar stays on
+  // debts until they're all cleared, leaving the rest as free surplus the
+  // user assigns to savings themselves.
+  if (strategy !== "priority") {
+    allocateSavingsTiered(
+      savings.filter((s) => !s.isLocked),
+      pool,
+      (s) =>
+        s.targetAmount > 0
+          ? Math.max(
+              0,
+              s.targetAmount - (s.currentAmount || 0) - s.weeklyContribution,
+            )
+          : Infinity,
+      (s, amt) => {
+        s.weeklyContribution += amt;
+      },
+    );
+  }
 
   return { ...prevState, debts, savings };
 }
