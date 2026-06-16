@@ -371,7 +371,13 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       ...emptyItemFields(),
       name: anyItem.name || "",
       amount: String(
-        (type === "savings" ? anyItem.weeklyContribution : anyItem.amount) ?? "",
+        type === "savings"
+          ? anyItem.weeklyContribution ?? ""
+          : // Auto-balanced debts show a blank repayment so editing them
+            // (e.g. the name) doesn't accidentally pin the computed amount.
+            type === "debt" && !anyItem.isManuallySet
+            ? ""
+            : anyItem.amount ?? "",
       ),
       frequency: anyItem.frequency || "weekly",
       targetAmount: String(anyItem.targetAmount || ""),
@@ -413,6 +419,9 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     if (newItemType === "expense" || newItemType === "debt") {
       const isDebt = newItemType === "debt";
       const collectionName = isDebt ? "debts" : "expenses";
+      // A debt with a repayment entered is "pinned" (manual); left blank it's
+      // auto-balanced by the allocation engine like the other auto debts.
+      const debtPinned = isDebt && Number(fields.amount) > 0;
       const itemToSave: BudgetElement = {
         id: editingItemId || Date.now().toString(),
         name: fields.name,
@@ -434,12 +443,12 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
             ? prev[collectionName].map((item) =>
                 item.id === editingItemId
                   ? isDebt
-                    ? { ...itemToSave, color: item.color, icon: item.icon, isManuallySet: true }
+                    ? { ...itemToSave, color: item.color, icon: item.icon, isManuallySet: debtPinned }
                     : { ...itemToSave, color: item.color, icon: item.icon }
                   : item,
               )
             : isDebt
-              ? [...prev[collectionName], { ...itemToSave, isManuallySet: true }]
+              ? [...prev[collectionName], { ...itemToSave, isManuallySet: debtPinned }]
               : [...prev[collectionName], itemToSave],
         };
         return calculateAutoAllocation(nextState);
