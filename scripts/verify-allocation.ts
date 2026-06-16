@@ -232,6 +232,25 @@ const base: BudgetState = {
   check("priority: savings stay as free surplus (no auto-fill)", approx(out.savings[0].weeklyContribution, 0), `em=${out.savings[0].weeklyContribution.toFixed(2)}`);
 }
 
+// --- Test 6f: pinned debts over-committing the pool are funded by priority ---
+{
+  // $500/wk cash − $300 rent = $200 pool, but two pinned debts want $150 each.
+  const overcommit: BudgetState = {
+    ...base,
+    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 500, isCash: true }],
+    debts: [
+      { id: "low", name: "Can-wait", amount: 150, totalBalance: 1000, originalBalance: 1000, category: "Debt", isManuallySet: true, debtPriority: 3 },
+      { id: "high", name: "Priority", amount: 150, totalBalance: 1000, originalBalance: 1000, category: "Debt", isManuallySet: true, debtPriority: 1 },
+    ],
+    savings: [],
+  };
+  const out = calculateAutoAllocation(overcommit);
+  const high = out.debts.find((d) => d.id === "high")!;
+  const low = out.debts.find((d) => d.id === "low")!;
+  check("pinned: higher-priority debt funded first when pool is tight", approx(high.amount, 150) && approx(low.amount, 50), `high=${high.amount.toFixed(2)} low=${low.amount.toFixed(2)}`);
+  check("pinned: total never exceeds the pool", high.amount + low.amount <= 200.01, `total=${(high.amount + low.amount).toFixed(2)}`);
+}
+
 // --- Calculator checks (annual figures verified against ATO 2025-26 / 2026-27) ---
 const annual = (gross: number, fy: "2025-26" | "2026-27") => {
   const r = calculateWeeklyTax(gross / 52, fy);
