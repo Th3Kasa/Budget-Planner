@@ -227,9 +227,17 @@ export default function AddItemModal({
                   className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
                 >
                   <option value="casual">Casual (Hourly)</option>
-                  <option value="fixed">Fixed (Weekly)</option>
+                  <option value="fixed">Weekly Total (Manual)</option>
                   <option value="payslip">Payslip (This Week's Actuals)</option>
                 </select>
+                {item.type === "fixed" && (
+                  <p className="text-xs text-gray-500 mt-1.5">
+                    Enter the weekly income total you've worked out yourself.
+                    Leave <span className="font-medium">Paid in cash</span>{" "}
+                    unticked to estimate tax on it, or tick it to add it as
+                    untaxed cash.
+                  </p>
+                )}
               </div>
               {item.type === "payslip" ? (
                 <>
@@ -373,7 +381,7 @@ export default function AddItemModal({
                 <>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      {item.type === "casual" ? "Hourly Rate ($)" : "Weekly Amount ($)"}
+                      {item.type === "casual" ? "Hourly Rate ($)" : "Weekly Income Total ($)"}
                     </label>
                     <input
                       type="number"
