@@ -394,7 +394,13 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       ...emptyItemFields(),
       name: anyItem.name || "",
       amount: String(
-        (type === "savings" ? anyItem.weeklyContribution : anyItem.amount) ?? "",
+        type === "savings"
+          ? anyItem.weeklyContribution ?? ""
+          : // Auto-balanced debts show a blank repayment so editing them
+            // (e.g. the name) doesn't accidentally pin the computed amount.
+            type === "debt" && !anyItem.isManuallySet
+            ? ""
+            : anyItem.amount ?? "",
       ),
       frequency: anyItem.frequency || "weekly",
       targetAmount: String(anyItem.targetAmount || ""),
@@ -436,6 +442,10 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     if (newItemType === "expense" || newItemType === "debt") {
       const isDebt = newItemType === "debt";
       const collectionName = isDebt ? "debts" : "expenses";
+      // A debt with ANY repayment entered is "pinned" (manual) — including an
+      // explicit 0, which pauses it (gets nothing). Left blank, it's
+      // auto-balanced by the allocation engine like the other auto debts.
+      const debtPinned = isDebt && fields.amount.trim() !== "";
       const itemToSave: BudgetElement = {
         id: editingItemId || Date.now().toString(),
         name: fields.name,
@@ -457,12 +467,12 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
             ? prev[collectionName].map((item) =>
                 item.id === editingItemId
                   ? isDebt
-                    ? { ...itemToSave, color: item.color, icon: item.icon, isManuallySet: true }
+                    ? { ...itemToSave, color: item.color, icon: item.icon, isManuallySet: debtPinned }
                     : { ...itemToSave, color: item.color, icon: item.icon }
                   : item,
               )
             : isDebt
-              ? [...prev[collectionName], { ...itemToSave, isManuallySet: true }]
+              ? [...prev[collectionName], { ...itemToSave, isManuallySet: debtPinned }]
               : [...prev[collectionName], itemToSave],
         };
         return calculateAutoAllocation(nextState);
@@ -601,6 +611,21 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     }));
   };
 
+  // Apply every debt's weekly repayment at once, then re-run allocation so a
+  // debt that just cleared hands its budget to the next one automatically.
+  const payAllDebts = () => {
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        debts: prev.debts.map((d) =>
+          d.totalBalance !== undefined
+            ? { ...d, totalBalance: Math.max(0, d.totalBalance - d.amount) }
+            : d,
+        ),
+      }),
+    );
+  };
+
   const reorderItems = (
     type: "expenses" | "debts",
     activeId: string,
@@ -734,6 +759,20 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
             }
           : s,
       ),
+    }));
+  };
+
+  // Apply every goal's weekly contribution at once (mirrors payAllDebts).
+  const payAllSavings = () => {
+    setState((prev) => ({
+      ...prev,
+      savings: prev.savings.map((s) => ({
+        ...s,
+        currentAmount: Math.min(
+          s.targetAmount || Infinity,
+          (s.currentAmount || 0) + (s.weeklyContribution || 0),
+        ),
+      })),
     }));
   };
 
@@ -907,16 +946,43 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     }
   };
 
-  const handleAllocateFromVault = (goalId: string, amount: number) => {
-    setState((prev) => ({
-      ...prev,
-      savings: prev.savings.map((s) =>
-        s.id === goalId
-          ? { ...s, currentAmount: (s.currentAmount || 0) + amount }
-          : s,
-      ),
-      cashBalance: Math.max(0, (prev.cashBalance || 0) - amount),
-    }));
+  // One-off deployment of money toward a debt (knocks down its balance) or a
+  // savings goal (tops it up). Source "vault" draws from the banked Cash Vault;
+  // source "surplus" deploys this week's free surplus (a recurring weekly pool,
+  // so it isn't a stored balance to deduct from).
+  const allocateFunds = (
+    source: "vault" | "surplus",
+    target: { type: "debt" | "savings"; id: string },
+    amount: number,
+  ) => {
+    const amt = Math.max(0, amount);
+    if (amt <= 0) return;
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        debts: prev.debts.map((d) =>
+          target.type === "debt" &&
+          d.id === target.id &&
+          d.totalBalance !== undefined
+            ? { ...d, totalBalance: Math.max(0, d.totalBalance - amt) }
+            : d,
+        ),
+        savings: prev.savings.map((s) =>
+          target.type === "savings" && s.id === target.id
+            ? {
+                ...s,
+                currentAmount: Math.min(
+                  s.targetAmount || Infinity,
+                  (s.currentAmount || 0) + amt,
+                ),
+              }
+            : s,
+        ),
+        ...(source === "vault"
+          ? { cashBalance: Math.max(0, (prev.cashBalance || 0) - amt) }
+          : {}),
+      }),
+    );
   };
 
   // ----- Settings -----
@@ -1014,6 +1080,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onRemoveIncome={removeIncome}
               onRemoveItem={removeItem}
               onPayDebt={payDebt}
+              onPayAllDebts={payAllDebts}
               onReorderExpenses={(a, b) => reorderItems("expenses", a, b)}
               onReorderDebts={(a, b) => reorderItems("debts", a, b)}
               onUpdateDebtAmount={updateDebtAmount}
@@ -1024,8 +1091,10 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onAdjustVault={handleAdjustVault}
               onUndoWindfall={handleUndoWindfall}
               onCommitWeek={handleCommitWeek}
+              onAllocateFunds={allocateFunds}
               savings={state.savings}
               onPaySavingsGoal={paySavingsGoal}
+              onPayAllSavings={payAllSavings}
             />
           )}
 
@@ -1054,6 +1123,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onLockSavingsGoal={lockSavingsGoal}
               onUnlockSavingsGoal={unlockSavingsGoal}
               onPaySavingsGoal={paySavingsGoal}
+              onPayAllSavings={payAllSavings}
             />
           )}
 

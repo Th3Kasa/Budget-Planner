@@ -109,29 +109,44 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
   );
   let pool = Math.max(0, totalNetIncome - totalExpenses);
 
-  // Manually-set debts and locked savings keep their amounts (capped by
-  // the pool so we never allocate money that doesn't exist).
+  // Manually-set debts are LOCKED to exactly the amount the user entered — they
+  // are never auto-adjusted (only capped at their own balance, since you can't
+  // repay more than you owe). Editing one manual debt therefore never changes
+  // another; only the auto debts rebalance around them. Auto debts start at 0
+  // and the chosen strategy below fills them from whatever surplus is left.
   for (const d of debts) {
     if (d.isManuallySet) {
-      d.amount = Math.min(d.amount, Math.max(0, d.totalBalance ?? 0), pool);
-      d.amount = Math.max(0, d.amount);
+      d.amount = Math.max(0, Math.min(d.amount, d.totalBalance ?? Infinity));
       pool -= d.amount;
     } else {
       d.amount = 0;
     }
   }
+  // If the locked repayments exceed the surplus there's nothing left to spread.
+  // (The shortfall surfaces as a negative surplus in the UI, not here.)
+  pool = Math.max(0, pool);
+  // Locked savings goals work exactly like manual debts: the contribution the
+  // user set is kept to the cent (capped only at the gap to that goal's target,
+  // since you'd never contribute past 100%). Locking one goal therefore never
+  // shrinks another — only the auto goals rebalance around them.
   for (const s of savings) {
     if (s.isLocked) {
-      s.weeklyContribution = Math.min(pool, s.weeklyContribution || 0);
+      const gap =
+        s.targetAmount > 0
+          ? Math.max(0, s.targetAmount - (s.currentAmount || 0))
+          : Infinity;
+      s.weeklyContribution = Math.max(0, Math.min(s.weeklyContribution || 0, gap));
       pool -= s.weeklyContribution;
     } else {
       s.weeklyContribution = 0;
     }
   }
+  pool = Math.max(0, pool);
 
   // Remaining pool is split across debts according to the chosen strategy.
   // (Manual amounts above act as each debt's minimum payment either way.)
-  if ((prevState.debtStrategy ?? "snowball") === "snowball") {
+  const strategy = prevState.debtStrategy ?? "snowball";
+  if (strategy === "snowball") {
     // Debt snowball: every debt keeps getting a fair, even minimum, but the
     // bulk of the surplus is hurled at the SMALLEST balance so it clears
     // fastest — then rolls into the next once it's gone. Manual amounts above
@@ -190,7 +205,7 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
     );
   }
 
-    // Whatever is left flows to unlocked savings goals via tiered priority.
+  // Whatever is left flows to unlocked savings goals via tiered priority.
   allocateSavingsTiered(
     savings.filter((s) => !s.isLocked),
     pool,
