@@ -10,7 +10,6 @@ export interface BudgetElement {
   icon?: string;
   isLocked?: boolean;
   isManuallySet?: boolean; // true when user has manually edited this debt's $/wk
-  debtPriority?: 1 | 2 | 3; // debts only: 1=pay off first, 2=normal (default), 3=can wait
 }
 
 export interface SavingsGoal {
@@ -130,9 +129,5 @@ export interface BudgetState {
   //                 first, rolling into the next as each one clears (default).
   //   "balanced"  → auto debts share the pool proportionally by balance, and
   //                 leftover surplus flows on to savings goals.
-  //   "priority"  → the whole debt budget clears the highest-priority group
-  //                 first (paid in parallel so they finish together), then
-  //                 rolls to the next group. Leftover only reaches savings
-  //                 once every debt is cleared.
-  debtStrategy?: "snowball" | "balanced" | "priority"; // undefined = "snowball"
+  debtStrategy?: "snowball" | "balanced"; // undefined = "snowball"
 }

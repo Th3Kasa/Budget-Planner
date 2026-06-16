@@ -74,8 +74,8 @@ interface HomeTabProps {
   onReorderDebts: (activeId: string, overId: string) => void;
   onUpdateDebtAmount: (id: string, amount: number) => void;
   onResetDebtAllocation: (id: string) => void;
-  debtStrategy: "snowball" | "balanced" | "priority";
-  onSetDebtStrategy: (strategy: "snowball" | "balanced" | "priority") => void;
+  debtStrategy: "snowball" | "balanced";
+  onSetDebtStrategy: (strategy: "snowball" | "balanced") => void;
   onRecordWindfall: (name: string, amount: number, priorities?: { debtId: string; amount: number }[]) => void;
   onAdjustVault: (newBalance: number) => void;
   onUndoWindfall: (id: string) => void;
@@ -258,21 +258,14 @@ export default function HomeTab({
   );
 
   const expenseIds = state.expenses.map((e) => e.id);
-  // Snowball: auto-sort by balance (smallest first). Priority: group by payoff
-  // priority, then balance within each group. Balanced: keep the manual drag
-  // order. Auto-sorted lists re-sort live as balances change.
+  // Snowball: auto-sort by balance (smallest first), re-sorting live as
+  // balances change. Balanced: keep the manual drag order.
   const displayDebts =
     debtStrategy === "snowball"
       ? [...state.debts].sort(
           (a, b) => (a.totalBalance ?? 0) - (b.totalBalance ?? 0),
         )
-      : debtStrategy === "priority"
-        ? [...state.debts].sort(
-            (a, b) =>
-              (a.debtPriority ?? 2) - (b.debtPriority ?? 2) ||
-              (a.totalBalance ?? 0) - (b.totalBalance ?? 0),
-          )
-        : state.debts;
+      : state.debts;
   const debtIds = displayDebts.map((d) => d.id);
 
   return (
@@ -737,19 +730,6 @@ export default function HomeTab({
                     >
                       ⚖️ Balanced
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => onSetDebtStrategy("priority")}
-                      className={cn(
-                        "px-2.5 py-1 rounded-md transition-colors",
-                        debtStrategy === "priority"
-                          ? "bg-white text-indigo-600 shadow-sm"
-                          : "text-gray-500 hover:text-gray-700",
-                      )}
-                      title="Clear your Priority debts first (paid in parallel), then Normal, then the rest"
-                    >
-                      🎯 Priority
-                    </button>
                   </div>
                 </div>
                 {debtStrategy === "snowball" && (
@@ -758,16 +738,6 @@ export default function HomeTab({
                     as minimums, the other debts get an even minimum, and the
                     rest is hurled at the smallest balance until it's gone —
                     then rolls into the next.
-                  </p>
-                )}
-                {debtStrategy === "priority" && (
-                  <p className="text-[11px] text-gray-500 mb-2 leading-snug">
-                    Your whole debt budget clears all{" "}
-                    <span className="font-medium text-indigo-600">Priority</span>{" "}
-                    debts first (paid together), then Normal, then Can-wait —
-                    rolling to the next group as each clears. Set each debt's
-                    priority when you add or edit it. Savings stay as free
-                    surplus until you're debt-free.
                   </p>
                 )}
                 <div className="flex justify-between items-center text-right mb-2">
@@ -857,11 +827,7 @@ export default function HomeTab({
                                   {debtStrategy !== "balanced" ? (
                                     <span
                                       className="p-1 text-gray-200 flex-shrink-0"
-                                      title={
-                                        debtStrategy === "priority"
-                                          ? "Auto-sorted by priority, then balance"
-                                          : "Auto-sorted: smallest balance first"
-                                      }
+                                      title="Auto-sorted: smallest balance first"
                                       aria-hidden
                                     >
                                       <GripVertical className="w-4 h-4" />
@@ -889,18 +855,6 @@ export default function HomeTab({
                                         {item.id === snowballTargetId && (
                                           <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-700 bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded-full whitespace-nowrap">
                                             ⛄ Focus
-                                          </span>
-                                        )}
-                                        {debtStrategy === "priority" && (item.debtPriority ?? 2) !== 2 && (
-                                          <span
-                                            className={cn(
-                                              "text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full whitespace-nowrap border",
-                                              (item.debtPriority ?? 2) === 1
-                                                ? "text-indigo-700 bg-indigo-100 border-indigo-200"
-                                                : "text-gray-500 bg-gray-100 border-gray-200",
-                                            )}
-                                          >
-                                            {(item.debtPriority ?? 2) === 1 ? "🎯 Priority" : "Can wait"}
                                           </span>
                                         )}
                                       </h3>
