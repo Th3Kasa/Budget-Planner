@@ -739,6 +739,20 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     }));
   };
 
+  // Apply every goal's weekly contribution at once (mirrors payAllDebts).
+  const payAllSavings = () => {
+    setState((prev) => ({
+      ...prev,
+      savings: prev.savings.map((s) => ({
+        ...s,
+        currentAmount: Math.min(
+          s.targetAmount || Infinity,
+          (s.currentAmount || 0) + (s.weeklyContribution || 0),
+        ),
+      })),
+    }));
+  };
+
   // Maps a shift's day name to its offset from Monday (weekStartsOn: 1).
   const DAY_OFFSET: Record<string, number> = {
     Monday: 0,
@@ -1057,6 +1071,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onAllocateFunds={allocateFunds}
               savings={state.savings}
               onPaySavingsGoal={paySavingsGoal}
+              onPayAllSavings={payAllSavings}
             />
           )}
 
@@ -1085,6 +1100,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onLockSavingsGoal={lockSavingsGoal}
               onUnlockSavingsGoal={unlockSavingsGoal}
               onPaySavingsGoal={paySavingsGoal}
+              onPayAllSavings={payAllSavings}
             />
           )}
 

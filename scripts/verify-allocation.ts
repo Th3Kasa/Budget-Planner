@@ -249,6 +249,42 @@ const base: BudgetState = {
   check("manual: auto debt gets nothing when surplus is exhausted (no negatives)", approx(get("cc").amount, 0), `cc=${get("cc").amount.toFixed(2)}`);
 }
 
+// --- Test 7: locked savings goals work exactly like manual debts ---
+{
+  // $1,000 net − $300 rent = $700 surplus, no debts. Lock the Holiday goal at
+  // $250/wk; the Emergency Fund (auto) should soak up the rest, and locking one
+  // goal must never shrink the locked amount.
+  const locked: BudgetState = {
+    ...base,
+    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 1000, isCash: true }],
+    debts: [],
+    savings: [
+      { id: "hol", name: "Holiday", targetAmount: 5000, currentAmount: 0, weeklyContribution: 250, isLocked: true },
+      { id: "em", name: "Emergency Fund", targetAmount: 5000, currentAmount: 0, weeklyContribution: 0 },
+    ],
+  };
+  const out = calculateAutoAllocation(locked);
+  const hol = out.savings.find((s) => s.id === "hol")!;
+  const em = out.savings.find((s) => s.id === "em")!;
+  check("savings: locked goal kept exactly at $250", approx(hol.weeklyContribution, 250), `hol=${hol.weeklyContribution.toFixed(2)}`);
+  check("savings: auto goal absorbs the remaining surplus", approx(em.weeklyContribution, 450), `em=${em.weeklyContribution.toFixed(2)}`);
+}
+
+// --- Test 7b: locked savings capped at the gap to target, not the pool ---
+{
+  // Goal needs only $80 more to hit target but is locked at $300/wk: the
+  // contribution is trimmed to the $80 gap (never over-funds past 100%).
+  const nearlyDone: BudgetState = {
+    ...base,
+    debts: [],
+    savings: [
+      { id: "g", name: "Almost There", targetAmount: 1000, currentAmount: 920, weeklyContribution: 300, isLocked: true },
+    ],
+  };
+  const out = calculateAutoAllocation(nearlyDone);
+  check("savings: locked contribution capped at gap to target", approx(out.savings[0].weeklyContribution, 80), `g=${out.savings[0].weeklyContribution.toFixed(2)}`);
+}
+
 // --- Calculator checks (annual figures verified against ATO 2025-26 / 2026-27) ---
 const annual = (gross: number, fy: "2025-26" | "2026-27") => {
   const r = calculateWeeklyTax(gross / 52, fy);

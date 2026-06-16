@@ -204,6 +204,7 @@ interface HomeTabProps {
   onCommitWeek: () => Promise<void>;
   savings: SavingsGoal[];
   onPaySavingsGoal: (id: string) => void;
+  onPayAllSavings: () => void;
   onAllocateFunds: (
     source: "vault" | "surplus",
     target: { type: "debt" | "savings"; id: string },
@@ -269,6 +270,7 @@ export default function HomeTab({
   onCommitWeek,
   savings,
   onPaySavingsGoal,
+  onPayAllSavings,
   onAllocateFunds,
 }: HomeTabProps) {
   const [isSellingAsset, setIsSellingAsset] = useState(false);
@@ -1523,6 +1525,20 @@ export default function HomeTab({
 
             {savingsOpen && (
               <div className="mt-4 space-y-4">
+                {savings.some(
+                  (s) =>
+                    (s.weeklyContribution || 0) > 0 &&
+                    (s.currentAmount || 0) < s.targetAmount,
+                ) && (
+                  <button
+                    type="button"
+                    onClick={onPayAllSavings}
+                    className="w-full flex items-center justify-center gap-1.5 text-xs font-bold uppercase tracking-wider bg-blue-600 text-white hover:bg-blue-700 py-2.5 rounded-xl transition-colors shadow-sm"
+                    title="Add every goal's weekly contribution at once"
+                  >
+                    <CheckCircle2 className="w-4 h-4" /> Pay all contributions
+                  </button>
+                )}
                 {savings.map((s) => {
                   const pct =
                     s.targetAmount > 0
