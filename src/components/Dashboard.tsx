@@ -385,7 +385,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       totalBalance: String(anyItem.originalBalance || anyItem.totalBalance || ""),
       category: anyItem.category || "General",
       priorityTier: String(anyItem.priorityTier ?? 3),
-      debtPriority: String(anyItem.debtPriority ?? 2),
       type: anyItem.type || "casual",
       isCash: anyItem.isCash || false,
       hourlyRate: String(anyItem.hourlyRate || ""),
@@ -436,9 +435,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         category: isDebt ? "Debt" : fields.category,
         color: isDebt ? "#ef4444" : "#f59e0b",
         icon: isDebt ? "credit-card" : "receipt",
-        debtPriority: isDebt
-          ? ((Number(fields.debtPriority) || 2) as 1 | 2 | 3)
-          : undefined,
       };
 
       setState((prev) => {

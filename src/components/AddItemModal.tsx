@@ -32,7 +32,6 @@ export interface NewItemFields {
   useShifts: boolean;
   shifts: ShiftFields[];
   priorityTier: string; // "1" | "2" | "3" — only used for savings goals
-  debtPriority: string; // "1" | "2" | "3" — only used for debts (payoff order)
   grossPay: string; // payslip income only
   taxWithheld: string; // payslip income only
   superAmount: string; // payslip income only
@@ -65,7 +64,6 @@ export const emptyItemFields = (): NewItemFields => ({
   hoursWorked: "",
   useShifts: false,
   priorityTier: "3",
-  debtPriority: "2",
   grossPay: "",
   taxWithheld: "",
   superAmount: "",
@@ -565,27 +563,6 @@ export default function AddItemModal({
                     className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                     placeholder="e.g. 5000"
                   />
-                </div>
-              )}
-              {itemType === "debt" && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1 mt-2">
-                    Payoff Priority
-                  </label>
-                  <select
-                    value={item.debtPriority}
-                    onChange={(e) => set({ debtPriority: e.target.value })}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none bg-white"
-                  >
-                    <option value="1">Priority — pay off first</option>
-                    <option value="2">Normal (default)</option>
-                    <option value="3">Can wait — pay off last</option>
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Used by the <span className="font-medium">Priority</span>{" "}
-                    payoff strategy: the whole debt budget clears all Priority
-                    debts first, then Normal, then the rest.
-                  </p>
                 </div>
               )}
               {itemType === "savings" && (

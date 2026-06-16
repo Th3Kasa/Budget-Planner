@@ -205,50 +205,48 @@ const base: BudgetState = {
   check("snowball: smallest debt fully funded then rolls into next", approx(zip.amount, 200) && approx(card.amount, 800), `zip=${zip.amount.toFixed(2)} card=${card.amount.toFixed(2)}`);
 }
 
-// --- Test 6e (priority): clears the priority group first, then rolls onward ---
+// --- Test 6e: manual repayments are LOCKED and never affect each other ---
 {
-  // $1,800/wk cash income (untaxed) − $300 rent = $1,500 debt budget.
-  const priority: BudgetState = {
+  // The exact scenario reported: pin the Car at $132 and the Wedding at $500.
+  // $2,000/wk cash − $300 rent = $1,700 surplus. Each manual amount must be
+  // kept to the cent; only the auto debt (credit card) absorbs the remainder.
+  const manual: BudgetState = {
     ...base,
-    debtStrategy: "priority",
-    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 1800, isCash: true }],
+    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 2000, isCash: true }],
     debts: [
-      { id: "s1", name: "Afterpay", amount: 0, totalBalance: 200, originalBalance: 200, category: "Debt", debtPriority: 1 },
-      { id: "s2", name: "Zip", amount: 0, totalBalance: 300, originalBalance: 300, category: "Debt", debtPriority: 1 },
-      { id: "med", name: "Personal Loan", amount: 0, totalBalance: 2000, originalBalance: 2000, category: "Debt", debtPriority: 2 },
-      { id: "big", name: "Car Loan", amount: 0, totalBalance: 5000, originalBalance: 5000, category: "Debt", debtPriority: 3 },
+      { id: "car", name: "Car Loan", amount: 132, totalBalance: 5000, originalBalance: 5000, category: "Debt", isManuallySet: true },
+      { id: "wed", name: "David Wedding", amount: 500, totalBalance: 8000, originalBalance: 8000, category: "Debt", isManuallySet: true },
+      { id: "cc", name: "Credit Card", amount: 0, totalBalance: 2000, originalBalance: 2000, category: "Debt" },
     ],
-    savings: [{ id: "em", name: "Emergency Fund", targetAmount: 5000, currentAmount: 0, weeklyContribution: 0 }],
+    savings: [],
   };
-  const out = calculateAutoAllocation(priority);
+  const out = calculateAutoAllocation(manual);
   const get = (id: string) => out.debts.find((d) => d.id === id)!;
-  const s1 = get("s1"), s2 = get("s2"), med = get("med"), big = get("big");
-  // Priority group (s1+s2 = $500) is fully covered first — they finish together.
-  check("priority: priority group fully funded", approx(s1.amount, 200) && approx(s2.amount, 300), `s1=${s1.amount.toFixed(2)} s2=${s2.amount.toFixed(2)}`);
-  // Remaining $1,000 rolls to the next group (med); the last group (big) waits.
-  check("priority: leftover rolls to the next group", approx(med.amount, 1000), `med=${med.amount.toFixed(2)}`);
-  check("priority: lowest-priority debt waits", approx(big.amount, 0), `big=${big.amount.toFixed(2)}`);
-  // Savings get nothing while any debt remains under the priority strategy.
-  check("priority: savings stay as free surplus (no auto-fill)", approx(out.savings[0].weeklyContribution, 0), `em=${out.savings[0].weeklyContribution.toFixed(2)}`);
+  const car = get("car"), wed = get("wed"), cc = get("cc");
+  check("manual: pinned Car stays exactly $132", approx(car.amount, 132), `car=${car.amount.toFixed(2)}`);
+  check("manual: pinned Wedding stays exactly $500 (doesn't shift the Car)", approx(wed.amount, 500), `wed=${wed.amount.toFixed(2)}`);
+  check("manual: only the auto debt absorbs the rest", approx(cc.amount, 1700 - 132 - 500), `cc=${cc.amount.toFixed(2)}`);
 }
 
-// --- Test 6f: pinned debts over-committing the pool are funded by priority ---
+// --- Test 6f: manual debts over-committing the surplus are still kept exact ---
 {
-  // $500/wk cash − $300 rent = $200 pool, but two pinned debts want $150 each.
+  // $400/wk cash − $300 rent = $100 surplus, but two pinned debts want $632.
+  // Manual amounts are sacred: both keep their full value (the shortfall shows
+  // up as a negative surplus in the UI), and the auto debt simply gets nothing.
   const overcommit: BudgetState = {
     ...base,
-    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 500, isCash: true }],
+    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 400, isCash: true }],
     debts: [
-      { id: "low", name: "Can-wait", amount: 150, totalBalance: 1000, originalBalance: 1000, category: "Debt", isManuallySet: true, debtPriority: 3 },
-      { id: "high", name: "Priority", amount: 150, totalBalance: 1000, originalBalance: 1000, category: "Debt", isManuallySet: true, debtPriority: 1 },
+      { id: "car", name: "Car Loan", amount: 132, totalBalance: 5000, originalBalance: 5000, category: "Debt", isManuallySet: true },
+      { id: "wed", name: "David Wedding", amount: 500, totalBalance: 8000, originalBalance: 8000, category: "Debt", isManuallySet: true },
+      { id: "cc", name: "Credit Card", amount: 0, totalBalance: 2000, originalBalance: 2000, category: "Debt" },
     ],
     savings: [],
   };
   const out = calculateAutoAllocation(overcommit);
-  const high = out.debts.find((d) => d.id === "high")!;
-  const low = out.debts.find((d) => d.id === "low")!;
-  check("pinned: higher-priority debt funded first when pool is tight", approx(high.amount, 150) && approx(low.amount, 50), `high=${high.amount.toFixed(2)} low=${low.amount.toFixed(2)}`);
-  check("pinned: total never exceeds the pool", high.amount + low.amount <= 200.01, `total=${(high.amount + low.amount).toFixed(2)}`);
+  const get = (id: string) => out.debts.find((d) => d.id === id)!;
+  check("manual: pinned amounts kept exact even when over budget", approx(get("car").amount, 132) && approx(get("wed").amount, 500), `car=${get("car").amount.toFixed(2)} wed=${get("wed").amount.toFixed(2)}`);
+  check("manual: auto debt gets nothing when surplus is exhausted (no negatives)", approx(get("cc").amount, 0), `cc=${get("cc").amount.toFixed(2)}`);
 }
 
 // --- Calculator checks (annual figures verified against ATO 2025-26 / 2026-27) ---
