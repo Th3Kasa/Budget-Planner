@@ -16,6 +16,7 @@ import { DEFAULT_JOBSEEKER_MAX_FORTNIGHTLY } from "../lib/calculators";
 import {
   calculateAutoAllocation,
   distributeWindfall,
+  round2,
   undoWindfall,
 } from "../lib/allocation";
 import { downloadBudgetCsv } from "../lib/exportCsv";
@@ -605,7 +606,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       ...prev,
       debts: prev.debts.map((d) =>
         d.id === id && d.totalBalance !== undefined
-          ? { ...d, totalBalance: Math.max(0, d.totalBalance - d.amount) }
+          ? { ...d, totalBalance: round2(Math.max(0, d.totalBalance - d.amount)) }
           : d,
       ),
     }));
@@ -619,7 +620,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         ...prev,
         debts: prev.debts.map((d) =>
           d.totalBalance !== undefined
-            ? { ...d, totalBalance: Math.max(0, d.totalBalance - d.amount) }
+            ? { ...d, totalBalance: round2(Math.max(0, d.totalBalance - d.amount)) }
             : d,
         ),
       }),
@@ -745,35 +746,49 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     );
   };
 
+  // Bank a goal's weekly contribution, then re-run allocation so a goal that
+  // just hit its target hands its share of the pool to the next priority tier
+  // automatically (mirrors payAllDebts). A completed High Priority goal drops
+  // out of the tier-1 split, so its 70% flows to the Secondary goal — exactly
+  // the rebalance the user expects once the top priority is done.
   const paySavingsGoal = (id: string) => {
-    setState((prev) => ({
-      ...prev,
-      savings: prev.savings.map((s) =>
-        s.id === id
-          ? {
-              ...s,
-              currentAmount: Math.min(
-                s.targetAmount || Infinity,
-                (s.currentAmount || 0) + (s.weeklyContribution || 0),
-              ),
-            }
-          : s,
-      ),
-    }));
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        savings: prev.savings.map((s) =>
+          s.id === id
+            ? {
+                ...s,
+                currentAmount: round2(
+                  Math.min(
+                    s.targetAmount || Infinity,
+                    (s.currentAmount || 0) + (s.weeklyContribution || 0),
+                  ),
+                ),
+              }
+            : s,
+        ),
+      }),
+    );
   };
 
-  // Apply every goal's weekly contribution at once (mirrors payAllDebts).
+  // Apply every goal's weekly contribution at once, then rebalance so any goals
+  // that just completed release their pool to the goals still running.
   const payAllSavings = () => {
-    setState((prev) => ({
-      ...prev,
-      savings: prev.savings.map((s) => ({
-        ...s,
-        currentAmount: Math.min(
-          s.targetAmount || Infinity,
-          (s.currentAmount || 0) + (s.weeklyContribution || 0),
-        ),
-      })),
-    }));
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        savings: prev.savings.map((s) => ({
+          ...s,
+          currentAmount: round2(
+            Math.min(
+              s.targetAmount || Infinity,
+              (s.currentAmount || 0) + (s.weeklyContribution || 0),
+            ),
+          ),
+        })),
+      }),
+    );
   };
 
   // Maps a shift's day name to its offset from Monday (weekStartsOn: 1).
@@ -964,16 +979,18 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           target.type === "debt" &&
           d.id === target.id &&
           d.totalBalance !== undefined
-            ? { ...d, totalBalance: Math.max(0, d.totalBalance - amt) }
+            ? { ...d, totalBalance: round2(Math.max(0, d.totalBalance - amt)) }
             : d,
         ),
         savings: prev.savings.map((s) =>
           target.type === "savings" && s.id === target.id
             ? {
                 ...s,
-                currentAmount: Math.min(
-                  s.targetAmount || Infinity,
-                  (s.currentAmount || 0) + amt,
+                currentAmount: round2(
+                  Math.min(
+                    s.targetAmount || Infinity,
+                    (s.currentAmount || 0) + amt,
+                  ),
                 ),
               }
             : s,

@@ -44,31 +44,41 @@ export default function GoalsTab({
   //   P1 goals active  → P1 goals share 70%; all others share 30%
   //   No P1, P2 active → P2 goals share 100%; P3 goals get 0%
   //   All P3           → equal split by splitWeight
-  const unlockedGoals = savings.filter((s) => !s.isLocked);
-  const unlockedTier1 = unlockedGoals.filter((s) => (s.priorityTier ?? 3) === 1);
-  const unlockedTier2 = unlockedGoals.filter((s) => (s.priorityTier ?? 3) === 2);
-  const unlockedNonTier1 = unlockedGoals.filter((s) => (s.priorityTier ?? 3) !== 1);
+  //
+  // "Active" means still short of its target. This mirrors the allocation
+  // engine, which only counts goals with a remaining gap — so the moment a
+  // High Priority goal is fully funded it stops claiming its 70% here too, and
+  // the remaining goals' percentages jump to reflect the pool they now receive.
+  const hasGap = (s: SavingsGoal): boolean =>
+    s.targetAmount > 0 ? s.targetAmount - (s.currentAmount || 0) > 0.01 : true;
+
+  const activeGoals = savings.filter((s) => !s.isLocked && hasGap(s));
+  const activeTier1 = activeGoals.filter((s) => (s.priorityTier ?? 3) === 1);
+  const activeTier2 = activeGoals.filter((s) => (s.priorityTier ?? 3) === 2);
+  const activeNonTier1 = activeGoals.filter((s) => (s.priorityTier ?? 3) !== 1);
 
   const getSplitPct = (s: SavingsGoal): number => {
+    // A fully-funded (or locked) goal draws nothing from the rebalancing pool.
+    if (!hasGap(s)) return 0;
     const thisTier = s.priorityTier ?? 3;
     const w = s.splitWeight || 1;
-    if (unlockedTier1.length > 0) {
+    if (activeTier1.length > 0) {
       if (thisTier === 1) {
-        const t1W = unlockedTier1.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
+        const t1W = activeTier1.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
         return Math.round(70 * (w / t1W));
       }
-      const nonT1W = unlockedNonTier1.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
+      const nonT1W = activeNonTier1.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
       return nonT1W > 0 ? Math.round(30 * (w / nonT1W)) : 0;
     }
-    if (unlockedTier2.length > 0) {
+    if (activeTier2.length > 0) {
       if (thisTier === 2) {
-        const t2W = unlockedTier2.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
+        const t2W = activeTier2.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
         return Math.round(100 * (w / t2W));
       }
       return 0; // P3 gets nothing while P2 is active
     }
-    const totalW = unlockedGoals.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
-    return totalW > 0 ? Math.round(100 * (w / totalW)) : 100;
+    const totalW = activeGoals.reduce((sum, g) => sum + (g.splitWeight || 1), 0);
+    return totalW > 0 ? Math.round(100 * (w / totalW)) : 0;
   };
 
   const totalSaved = savings.reduce((acc, s) => acc + (s.currentAmount || 0), 0);

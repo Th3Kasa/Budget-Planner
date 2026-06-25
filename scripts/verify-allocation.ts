@@ -286,6 +286,69 @@ const base: BudgetState = {
   check("savings: locked contribution capped at gap to target", approx(out.savings[0].weeklyContribution, 80), `g=${out.savings[0].weeklyContribution.toFixed(2)}`);
 }
 
+// --- Test 7c: tiered priority — High Priority (tier 1) takes 70% of the pool ---
+{
+  // $1,000 cash − $300 rent = $700 pool, no debts. Three auto goals: one P1,
+  // one P2, one P3. While P1 is active it should get 70% ($490); the P2 and P3
+  // goals share the remaining 30% ($210) equally ($105 each).
+  const tiered: BudgetState = {
+    ...base,
+    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 1000, isCash: true }],
+    debts: [],
+    savings: [
+      { id: "p1", name: "Top", targetAmount: 50000, currentAmount: 0, weeklyContribution: 0, priorityTier: 1 },
+      { id: "p2", name: "Secondary", targetAmount: 50000, currentAmount: 0, weeklyContribution: 0, priorityTier: 2 },
+      { id: "p3", name: "General", targetAmount: 50000, currentAmount: 0, weeklyContribution: 0, priorityTier: 3 },
+    ],
+  };
+  const out = calculateAutoAllocation(tiered);
+  const g = (id: string) => out.savings.find((s) => s.id === id)!;
+  check("tiered: P1 takes 70% of the pool", approx(g("p1").weeklyContribution, 490), `p1=${g("p1").weeklyContribution.toFixed(2)}`);
+  check("tiered: P2 + P3 split the remaining 30%", approx(g("p2").weeklyContribution, 105) && approx(g("p3").weeklyContribution, 105), `p2=${g("p2").weeklyContribution.toFixed(2)} p3=${g("p3").weeklyContribution.toFixed(2)}`);
+}
+
+// --- Test 7d: rebalance once the top priority is complete ---
+{
+  // Same setup, but the P1 goal is already fully funded ($50k of $50k). With no
+  // active tier-1 goal left, the Secondary (tier 2) goal must take the WHOLE
+  // pool (100% = $700) and the General (tier 3) goal gets nothing — this is the
+  // automatic rebalance the user expects the instant the top priority is done.
+  const topDone: BudgetState = {
+    ...base,
+    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 1000, isCash: true }],
+    debts: [],
+    savings: [
+      { id: "p1", name: "Top", targetAmount: 50000, currentAmount: 50000, weeklyContribution: 0, priorityTier: 1 },
+      { id: "p2", name: "Secondary", targetAmount: 50000, currentAmount: 0, weeklyContribution: 0, priorityTier: 2 },
+      { id: "p3", name: "General", targetAmount: 50000, currentAmount: 0, weeklyContribution: 0, priorityTier: 3 },
+    ],
+  };
+  const out = calculateAutoAllocation(topDone);
+  const g = (id: string) => out.savings.find((s) => s.id === id)!;
+  check("rebalance: completed P1 draws nothing", approx(g("p1").weeklyContribution, 0), `p1=${g("p1").weeklyContribution.toFixed(2)}`);
+  check("rebalance: P2 takes 100% after P1 is complete", approx(g("p2").weeklyContribution, 700), `p2=${g("p2").weeklyContribution.toFixed(2)}`);
+  check("rebalance: P3 stays at $0 while P2 is active", approx(g("p3").weeklyContribution, 0), `p3=${g("p3").weeklyContribution.toFixed(2)}`);
+}
+
+// --- Test 7e: every rebalanced figure is rounded to whole cents ---
+{
+  // An awkward pool / weight split that would otherwise produce long fractions
+  // (e.g. 1330.1825384615386). Every contribution must come back at <= 2 dp.
+  const messy: BudgetState = {
+    ...base,
+    incomes: [{ id: "j", name: "Job", type: "fixed", amount: 877, isCash: true }],
+    debts: [],
+    savings: [
+      { id: "a", name: "A", targetAmount: 50000, currentAmount: 0, weeklyContribution: 0, splitWeight: 2 },
+      { id: "b", name: "B", targetAmount: 50000, currentAmount: 0, weeklyContribution: 0, splitWeight: 1 },
+      { id: "c", name: "C", targetAmount: 50000, currentAmount: 0, weeklyContribution: 0 },
+    ],
+  };
+  const out = calculateAutoAllocation(messy);
+  const is2dp = (n: number) => approx(n, Math.round(n * 100) / 100, 1e-9);
+  check("rounding: all contributions are whole cents", out.savings.every((s) => is2dp(s.weeklyContribution)), out.savings.map((s) => s.weeklyContribution).join(", "));
+}
+
 // --- Calculator checks (annual figures verified against ATO 2025-26 / 2026-27) ---
 const annual = (gross: number, fy: "2025-26" | "2026-27") => {
   const r = calculateWeeklyTax(gross / 52, fy);
