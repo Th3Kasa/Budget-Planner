@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { CheckCircle2, Edit2, Plus, RotateCcw, ShieldPlus, Star, Target, Trash2 } from "lucide-react";
+import { CalendarClock, CheckCircle2, Edit2, Plus, RotateCcw, ShieldPlus, Star, Target, Trash2, Zap } from "lucide-react";
 import { SavingsGoal } from "../../types";
 
 const money = (v: number) =>
@@ -116,6 +116,44 @@ export default function GoalsTab({
   const emergencyUnderTarget =
     !!emergencyGoal && emergencyGoal.targetAmount + 0.01 < recommendedEmergencyFund;
 
+  // ----- Deadline tracking -----
+  // Compare the weeks a goal needs at its current pace against the weeks left
+  // until its target date, so each goal can show an on-track / behind badge.
+  const deadlineStatus = (s: SavingsGoal) => {
+    if (!s.deadline) return null;
+    const funded =
+      s.targetAmount > 0 && (s.currentAmount || 0) >= s.targetAmount - 0.01;
+    const ms = new Date(s.deadline + "T00:00:00").getTime() - Date.now();
+    const weeksUntil = Math.ceil(ms / (7 * 24 * 60 * 60 * 1000));
+    const dateLabel = new Date(s.deadline + "T00:00:00").toLocaleDateString(
+      undefined,
+      { day: "numeric", month: "short", year: "numeric" },
+    );
+    const needWeeks = weeksLeft(s); // 0 when funded or no contribution set
+    return { funded, weeksUntil, dateLabel, needWeeks };
+  };
+
+  // ----- What-if simulator -----
+  // Spread a hypothetical extra weekly amount evenly across goals that still
+  // have a gap, then recompute how long until every goal is funded.
+  const [whatIfExtra, setWhatIfExtra] = useState("");
+  const extra = Math.max(0, Number(whatIfExtra) || 0);
+  const gapGoals = savings.filter(
+    (s) => s.targetAmount > 0 && (s.currentAmount || 0) < s.targetAmount - 0.01,
+  );
+  const extraShare = gapGoals.length > 0 ? extra / gapGoals.length : 0;
+  const simulatedWeeks = (() => {
+    const weeks = gapGoals
+      .map((s) => {
+        const contrib = (s.weeklyContribution || 0) + extraShare;
+        if (contrib <= 0) return Infinity;
+        return Math.ceil((s.targetAmount - (s.currentAmount || 0)) / contrib);
+      })
+      .filter((w) => Number.isFinite(w));
+    return weeks.length > 0 ? Math.max(...weeks) : 0;
+  })();
+  const weeksSaved = maxWeeks > 0 ? Math.max(0, maxWeeks - simulatedWeeks) : 0;
+
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -213,6 +251,57 @@ export default function GoalsTab({
         </div>
       )}
 
+      {gapGoals.length > 0 && weeklyRate > 0 && (
+        <div className="glass-card p-5 md:p-6 border border-blue-100 bg-gradient-to-r from-blue-50/60 to-indigo-50/40">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">
+              <Zap className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900">What-if simulator</h3>
+              <p className="text-xs text-gray-500">
+                See how saving a little more each week speeds things up.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500 font-medium">Extra</span>
+              <div className="relative">
+                <span className="absolute left-3 top-2 text-gray-400 font-medium">$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="10"
+                  value={whatIfExtra}
+                  onChange={(e) => setWhatIfExtra(e.target.value)}
+                  placeholder="0"
+                  className="w-28 text-sm pl-7 pr-3 py-2 bg-white border border-gray-200 rounded-xl outline-none focus:border-blue-400"
+                />
+              </div>
+              <span className="text-sm text-gray-500 font-medium">/wk</span>
+            </div>
+            <div className="flex-1 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+              <div>
+                <span className="text-gray-500">All goals done in </span>
+                <span className="font-bold text-gray-400 line-through">
+                  {maxWeeks > 0 ? `${maxWeeks} wk` : "—"}
+                </span>
+                <span className="text-gray-500"> → </span>
+                <span className="font-extrabold text-blue-600">
+                  {simulatedWeeks > 0 ? `${simulatedWeeks} wk` : "—"}
+                </span>
+              </div>
+              {extra > 0 && weeksSaved > 0 && (
+                <span className="text-xs font-bold uppercase tracking-wider bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full">
+                  {weeksSaved} weeks sooner · ~{(weeksSaved / 52).toFixed(1)} yrs
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="glass-card p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
@@ -271,6 +360,7 @@ export default function GoalsTab({
                 target > 0
                   ? Math.min(100, Math.max(0, (current / target) * 100))
                   : 0;
+              const dl = deadlineStatus(s);
 
               return (
                 <div
@@ -461,6 +551,31 @@ export default function GoalsTab({
                         <span className="text-gray-300 mx-1">·</span>
                         ~{(weeksLeft(s) / 52).toFixed(1)} yrs
                       </p>
+                    )}
+                    {dl && (
+                      <div className="mt-1.5 mb-3 flex items-center gap-1.5 flex-wrap text-xs">
+                        <span className="inline-flex items-center gap-1 text-gray-500">
+                          <CalendarClock className="w-3.5 h-3.5 flex-shrink-0" />
+                          By {dl.dateLabel}
+                        </span>
+                        {dl.funded ? (
+                          <span className="font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                            Reached
+                          </span>
+                        ) : dl.weeksUntil < 0 ? (
+                          <span className="font-bold uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200 px-1.5 py-0.5 rounded-full">
+                            Overdue
+                          </span>
+                        ) : dl.needWeeks === 0 ? null : dl.needWeeks <= dl.weeksUntil ? (
+                          <span className="font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                            On track
+                          </span>
+                        ) : (
+                          <span className="font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                            Behind · need {dl.needWeeks - dl.weeksUntil} wk more
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
 
