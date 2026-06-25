@@ -80,6 +80,17 @@ export interface WeeklySnapshot {
   created_at: string;
 }
 
+// A weekly net-worth checkpoint (savings + cash vault − debt). Stored inside
+// the synced budget blob, so it needs no extra table — it rides along with the
+// existing cloud sync and localStorage persistence.
+export interface NetWorthPoint {
+  week: string; // "yyyy-MM-dd" Monday
+  savings: number;
+  vault: number;
+  debt: number;
+  netWorth: number;
+}
+
 export interface Windfall {
   id: string;
   name: string;
@@ -122,6 +133,7 @@ export interface BudgetState {
   savings: SavingsGoal[];
   cashBalance?: number;
   windfalls?: Windfall[];
+  netWorthHistory?: NetWorthPoint[]; // weekly net-worth checkpoints for the trend chart
   centrelinkEnabled?: boolean; // undefined = true (legacy states)
   centrelinkMaxFortnightly?: number; // undefined = current JobSeeker single rate
   // How the weekly surplus is split across debts:

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { CheckCircle2, Edit2, Plus, RotateCcw, Star, Target, Trash2 } from "lucide-react";
+import { CheckCircle2, Edit2, Plus, RotateCcw, ShieldPlus, Star, Target, Trash2 } from "lucide-react";
 import { SavingsGoal } from "../../types";
 
 const money = (v: number) =>
@@ -10,6 +10,8 @@ const money = (v: number) =>
 
 interface GoalsTabProps {
   savings: SavingsGoal[];
+  recommendedEmergencyFund: number;
+  onCreateEmergencyFund: (target: number) => void;
   onEditGoal: (goal: SavingsGoal) => void;
   onRemoveGoal: (id: string) => void;
   onAddGoal: () => void;
@@ -24,6 +26,8 @@ interface GoalsTabProps {
 
 export default function GoalsTab({
   savings,
+  recommendedEmergencyFund,
+  onCreateEmergencyFund,
   onEditGoal,
   onRemoveGoal,
   onAddGoal,
@@ -104,6 +108,14 @@ export default function GoalsTab({
       ? Math.max(...goalsWithCountdown.map(weeksLeft))
       : 0;
 
+  // Emergency-fund coach: surface the 3-months-of-expenses recommendation.
+  // If a goal already looks like an emergency fund, compare its target to the
+  // recommendation; otherwise offer to create one in a tap.
+  const emergencyGoal = savings.find((s) => /emerg/i.test(s.name));
+  const showEmergencyCoach = recommendedEmergencyFund > 0;
+  const emergencyUnderTarget =
+    !!emergencyGoal && emergencyGoal.targetAmount + 0.01 < recommendedEmergencyFund;
+
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -159,6 +171,47 @@ export default function GoalsTab({
           </p>
         </div>
       </div>
+
+      {showEmergencyCoach && (!emergencyGoal || emergencyUnderTarget) && (
+        <div className="glass-card p-5 border border-amber-100 bg-gradient-to-r from-amber-50/70 to-orange-50/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">
+              <ShieldPlus className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900">
+                {emergencyGoal ? "Boost your emergency fund" : "Build an emergency fund"}
+              </h3>
+              <p className="text-sm text-gray-600 mt-0.5">
+                A safety net of ~3 months of expenses is{" "}
+                <span className="font-bold text-amber-700">
+                  ${money(recommendedEmergencyFund)}
+                </span>
+                .
+                {emergencyGoal
+                  ? ` Your "${emergencyGoal.name}" target is $${money(emergencyGoal.targetAmount)} — consider raising it.`
+                  : " You don't have one set up yet."}
+              </p>
+            </div>
+          </div>
+          {!emergencyGoal && (
+            <button
+              onClick={() => onCreateEmergencyFund(recommendedEmergencyFund)}
+              className="flex items-center justify-center gap-1.5 text-sm bg-amber-600 text-white font-semibold px-4 py-2.5 rounded-xl hover:bg-amber-700 transition flex-shrink-0"
+            >
+              <Plus className="w-4 h-4 flex-shrink-0" /> Create Emergency Fund
+            </button>
+          )}
+          {emergencyGoal && (
+            <button
+              onClick={() => onEditGoal(emergencyGoal)}
+              className="flex items-center justify-center gap-1.5 text-sm bg-white border border-amber-200 text-amber-700 font-semibold px-4 py-2.5 rounded-xl hover:bg-amber-50 transition flex-shrink-0"
+            >
+              <Edit2 className="w-4 h-4 flex-shrink-0" /> Adjust Target
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="glass-card p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
