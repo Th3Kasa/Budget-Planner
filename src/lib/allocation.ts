@@ -7,6 +7,14 @@ import { summarizeIncome } from "./income";
 // focus debt.
 const SNOWBALL_RESERVE = 0.30;
 
+// Round to whole cents. The allocation math divides pools by weights, which
+// produces long fractions (e.g. 1330.1825384615386). Money is only ever
+// meaningful to 2 dp, so every rebalanced/recalculated figure is rounded
+// through here before it leaves the engine. (+ EPSILON nudges values sitting
+// exactly on the half-cent — like 0.005 — up rather than down.)
+export const round2 = (n: number): number =>
+  Math.round((n + Number.EPSILON) * 100) / 100;
+
 // Distribute `pool` across `items` proportional to `weight(item)`,
 // capping each item at `cap(item)`. When an item hits its cap, its
 // unused share is redistributed among the rest. Returns leftover pool.
@@ -221,6 +229,11 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
     },
   );
 
+  // Whole-cent every rebalanced figure so the UI (and the Edit modal's
+  // pre-filled inputs) never surface values like 1330.1825384615386.
+  for (const d of debts) d.amount = round2(d.amount);
+  for (const s of savings) s.weeklyContribution = round2(s.weeklyContribution);
+
   return { ...prevState, debts, savings };
 }
 
@@ -294,13 +307,20 @@ export function distributeWindfall(
     },
   );
 
+  // Whole-cent the proportional splits before they're stored or displayed.
+  for (const d of debts) {
+    if (d.totalBalance != null) d.totalBalance = round2(d.totalBalance);
+  }
+  for (const s of savings) s.currentAmount = round2(s.currentAmount || 0);
+  for (const dist of distributions) dist.amount = round2(dist.amount);
+
   const windfall: Windfall = {
     id: "windfall-" + Date.now(),
     name,
     sourceAmount: amount,
     date: Date.now(),
     distributions,
-    unallocatedCash: pool,
+    unallocatedCash: round2(pool),
   };
 
   return calculateAutoAllocation({
