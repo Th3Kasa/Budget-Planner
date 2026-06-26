@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
   Cloud,
   CloudOff,
   Download,
+  FileUp,
   Fingerprint,
   KeyRound,
   Landmark,
@@ -12,11 +13,14 @@ import {
   Monitor,
   Moon,
   Palette,
+  Save,
   ShieldCheck,
   Sun,
   Trash2,
 } from "lucide-react";
 import { getTheme, setTheme, Theme } from "../../lib/theme";
+import { BudgetState } from "../../types";
+import { parseBackup } from "../../lib/backup";
 
 interface SettingsTabProps {
   centrelinkEnabled: boolean;
@@ -25,6 +29,8 @@ interface SettingsTabProps {
   onToggleCentrelink: (enabled: boolean) => void;
   onChangeCentrelinkMax: (amount: number) => void;
   onExportCsv: () => void;
+  onExportBackup: () => void;
+  onImportBackup: (state: BudgetState) => void;
   onResetData: () => void;
 }
 
@@ -35,6 +41,8 @@ export default function SettingsTab({
   onToggleCentrelink,
   onChangeCentrelinkMax,
   onExportCsv,
+  onExportBackup,
+  onImportBackup,
   onResetData,
 }: SettingsTabProps) {
   const [theme, setThemeState] = useState<Theme>(() => getTheme());
@@ -43,6 +51,8 @@ export default function SettingsTab({
     setTheme(t);
   };
 
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [importError, setImportError] = useState("");
   const [currentPinInput, setCurrentPinInput] = useState("");
   const [newPinInput, setNewPinInput] = useState("");
   const [confirmPinInput, setConfirmPinInput] = useState("");
@@ -117,6 +127,30 @@ export default function SettingsTab({
       )
     ) {
       onResetData();
+    }
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!file) return;
+    setImportError("");
+    try {
+      const text = await file.text();
+      const imported = parseBackup(text);
+      if (!imported) {
+        setImportError("That file isn't a valid Budget Planner backup.");
+        return;
+      }
+      if (
+        window.confirm(
+          "Replace your current budget with this backup? Your present data will be overwritten (you can undo this).",
+        )
+      ) {
+        onImportBackup(imported);
+      }
+    } catch {
+      setImportError("Couldn't read that file.");
     }
   };
 
@@ -388,6 +422,35 @@ export default function SettingsTab({
             >
               <Download className="w-4 h-4" /> Export Budget as CSV
             </button>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={onExportBackup}
+                className="bg-white border border-indigo-200 text-indigo-700 font-semibold py-3 rounded-xl hover:bg-indigo-50 hover:border-indigo-300 transition flex items-center justify-center gap-2"
+                title="Download a full JSON backup you can restore later"
+              >
+                <Save className="w-4 h-4" /> Backup (.json)
+              </button>
+              <button
+                onClick={() => importInputRef.current?.click()}
+                className="bg-white border border-indigo-200 text-indigo-700 font-semibold py-3 rounded-xl hover:bg-indigo-50 hover:border-indigo-300 transition flex items-center justify-center gap-2"
+                title="Restore from a JSON backup file"
+              >
+                <FileUp className="w-4 h-4" /> Import
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={handleImportFile}
+              />
+            </div>
+            {importError && (
+              <div className="text-xs bg-red-50 text-red-600 font-medium p-3 rounded-xl border border-red-100 flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                {importError}
+              </div>
+            )}
             <button
               onClick={handleReset}
               className="w-full bg-white border border-red-200 text-red-600 font-semibold py-3 rounded-xl hover:bg-red-50 hover:border-red-300 transition flex items-center justify-center gap-2"
@@ -396,8 +459,9 @@ export default function SettingsTab({
             </button>
           </div>
           <p className="text-[11px] text-gray-400 mt-3">
-            The CSV includes incomes, expenses, debts, goals, windfalls, and a
-            weekly summary. Reset restores the default sample budget.
+            CSV is a flat spreadsheet view. The JSON backup captures everything
+            and restores exactly via Import. Reset restores the default sample
+            budget.
           </p>
         </div>
 

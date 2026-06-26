@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Home,
   LogOut,
   PieChart,
+  Redo2,
   Settings,
   Target,
+  Undo2,
   Wallet,
 } from "lucide-react";
 import { Session } from "@supabase/supabase-js";
@@ -20,6 +22,7 @@ import {
   undoWindfall,
 } from "../lib/allocation";
 import { downloadBudgetCsv } from "../lib/exportCsv";
+import { downloadBackup } from "../lib/backup";
 import {
   BudgetElement,
   BudgetState,
@@ -166,6 +169,78 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   const [state, setState] = useState<BudgetState>(loadInitialState);
   const [activeTab, setActiveTab] =
     useState<keyof typeof TAB_COPY>("home");
+
+  // ----- Undo / redo -----
+  // A bounded history of recent states. Changes are captured on a short
+  // debounce so a burst of inline edits collapses into one undo step. Undo and
+  // redo set a skip flag so they don't record themselves as new history.
+  const [past, setPast] = useState<BudgetState[]>([]);
+  const [future, setFuture] = useState<BudgetState[]>([]);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const lastTrackedRef = useRef<BudgetState>(state);
+  const skipTrackRef = useRef(false);
+
+  useEffect(() => {
+    if (skipTrackRef.current) {
+      skipTrackRef.current = false;
+      lastTrackedRef.current = state;
+      return;
+    }
+    if (state === lastTrackedRef.current) return;
+    const prev = lastTrackedRef.current;
+    const t = setTimeout(() => {
+      setPast((p) => [...p, prev].slice(-50));
+      setFuture([]);
+      lastTrackedRef.current = state;
+    }, 450);
+    return () => clearTimeout(t);
+  }, [state]);
+
+  const undo = useCallback(() => {
+    setPast((p) => {
+      if (p.length === 0) return p;
+      const prev = p[p.length - 1];
+      skipTrackRef.current = true;
+      setFuture((f) => [stateRef.current, ...f].slice(0, 50));
+      lastTrackedRef.current = prev;
+      setState(prev);
+      return p.slice(0, -1);
+    });
+  }, []);
+
+  const redo = useCallback(() => {
+    setFuture((f) => {
+      if (f.length === 0) return f;
+      const next = f[0];
+      skipTrackRef.current = true;
+      setPast((p) => [...p, stateRef.current].slice(-50));
+      lastTrackedRef.current = next;
+      setState(next);
+      return f.slice(1);
+    });
+  }, []);
+
+  // Keyboard shortcuts, ignored while typing in a field (so native text undo
+  // still works there).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || el?.isContentEditable) return;
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      } else if ((key === "z" && e.shiftKey) || key === "y") {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
 
   // Add/Edit modal
   const [isAddingItem, setIsAddingItem] = useState(false);
@@ -1085,6 +1160,12 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     setState(INITIAL_STATE);
   };
 
+  // Restore a full budget from a JSON backup. Re-run allocation so any derived
+  // weekly figures are recomputed cleanly from the imported data.
+  const handleImportBackup = (imported: BudgetState) => {
+    setState(calculateAutoAllocation(imported));
+  };
+
   const navButton = (tab: TabKey, icon: React.ElementType, size: "sm" | "lg") => (
     <NavButton
       key={tab}
@@ -1144,6 +1225,28 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               <p className="text-sm md:text-base text-gray-500 mt-1">
                 {TAB_COPY[activeTab].subtitle}
               </p>
+            </div>
+            <div className="flex items-center gap-2 self-end md:self-auto">
+              <button
+                onClick={undo}
+                disabled={past.length === 0}
+                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-600 hover:text-indigo-600 hover:border-indigo-200 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Undo (Ctrl/Cmd+Z)"
+                aria-label="Undo"
+              >
+                <Undo2 className="w-4 h-4 flex-shrink-0" />
+                <span className="hidden sm:inline">Undo</span>
+              </button>
+              <button
+                onClick={redo}
+                disabled={future.length === 0}
+                className="flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-600 hover:text-indigo-600 hover:border-indigo-200 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Redo (Ctrl/Cmd+Shift+Z)"
+                aria-label="Redo"
+              >
+                <Redo2 className="w-4 h-4 flex-shrink-0" />
+                <span className="hidden sm:inline">Redo</span>
+              </button>
             </div>
           </header>
 
@@ -1224,6 +1327,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onToggleCentrelink={handleToggleCentrelink}
               onChangeCentrelinkMax={handleChangeCentrelinkMax}
               onExportCsv={() => downloadBudgetCsv(state)}
+              onExportBackup={() => downloadBackup(state)}
+              onImportBackup={handleImportBackup}
               onResetData={handleResetData}
             />
           )}
