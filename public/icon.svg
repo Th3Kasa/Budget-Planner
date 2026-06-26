@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Budget Planner">
+  <rect width="512" height="512" rx="112" fill="#4f46e5"/>
+  <rect x="116" y="168" width="280" height="180" rx="34" fill="#ffffff"/>
+  <path d="M116 214 h280 v-12 a34 34 0 0 0 -34 -34 H150 a34 34 0 0 0 -34 34 Z" fill="#e0e7ff"/>
+  <rect x="296" y="232" width="120" height="58" rx="29" fill="#c7d2fe"/>
+  <circle cx="342" cy="261" r="15" fill="#4f46e5"/>
+</svg>

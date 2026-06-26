@@ -12,6 +12,7 @@ import {
   Monitor,
   Moon,
   Palette,
+  Printer,
   ShieldCheck,
   Sun,
   Trash2,
@@ -25,6 +26,7 @@ interface SettingsTabProps {
   onToggleCentrelink: (enabled: boolean) => void;
   onChangeCentrelinkMax: (amount: number) => void;
   onExportCsv: () => void;
+  onPrintSummary: () => void;
   onResetData: () => void;
 }
 
@@ -35,6 +37,7 @@ export default function SettingsTab({
   onToggleCentrelink,
   onChangeCentrelinkMax,
   onExportCsv,
+  onPrintSummary,
   onResetData,
 }: SettingsTabProps) {
   const [theme, setThemeState] = useState<Theme>(() => getTheme());
@@ -389,6 +392,12 @@ export default function SettingsTab({
               <Download className="w-4 h-4" /> Export Budget as CSV
             </button>
             <button
+              onClick={onPrintSummary}
+              className="w-full bg-white border border-indigo-200 text-indigo-700 font-semibold py-3 rounded-xl hover:bg-indigo-50 hover:border-indigo-300 transition flex items-center justify-center gap-2"
+            >
+              <Printer className="w-4 h-4" /> Print / Save as PDF
+            </button>
+            <button
               onClick={handleReset}
               className="w-full bg-white border border-red-200 text-red-600 font-semibold py-3 rounded-xl hover:bg-red-50 hover:border-red-300 transition flex items-center justify-center gap-2"
             >
@@ -397,7 +406,8 @@ export default function SettingsTab({
           </div>
           <p className="text-[11px] text-gray-400 mt-3">
             The CSV includes incomes, expenses, debts, goals, windfalls, and a
-            weekly summary. Reset restores the default sample budget.
+            weekly summary. Print / Save as PDF produces a clean one-page
+            snapshot. Reset restores the default sample budget.
           </p>
         </div>
 

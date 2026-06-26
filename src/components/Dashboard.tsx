@@ -36,6 +36,7 @@ import HomeTab from "./tabs/HomeTab";
 import HistoryTab from "./tabs/HistoryTab";
 import GoalsTab from "./tabs/GoalsTab";
 import SettingsTab from "./tabs/SettingsTab";
+import PrintSummary from "./PrintSummary";
 
 interface DashboardProps {
   session: Session | null;
@@ -1224,6 +1225,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onToggleCentrelink={handleToggleCentrelink}
               onChangeCentrelinkMax={handleChangeCentrelinkMax}
               onExportCsv={() => downloadBudgetCsv(state)}
+              onPrintSummary={() => window.print()}
               onResetData={handleResetData}
             />
           )}
@@ -1240,6 +1242,16 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           )}
         </div>
       </main>
+
+      {/* Print-only budget summary (hidden on screen; see index.css) */}
+      <PrintSummary
+        state={state}
+        summary={summary}
+        totalExpenses={totalExpenses}
+        totalDebts={totalDebts}
+        totalSavingsCont={totalSavingsCont}
+        weeklySurplus={weeklySurplus}
+      />
     </div>
   );
 }
