@@ -17,9 +17,11 @@ import {
   ChevronUp,
   Download,
   FileText,
+  PieChart as PieChartIcon,
   Plus,
   Trash2,
   TrendingDown,
+  Wallet,
 } from "lucide-react";
 import {
   LineChart,
@@ -32,7 +34,14 @@ import {
 } from "recharts";
 import { Session } from "@supabase/supabase-js";
 import { supabase } from "../../lib/supabase";
-import { IncomeStream, PayslipRecord, ShiftLog, WeeklySnapshot } from "../../types";
+import {
+  BudgetElement,
+  IncomeStream,
+  NetWorthPoint,
+  PayslipRecord,
+  ShiftLog,
+  WeeklySnapshot,
+} from "../../types";
 
 const WEEKS_PER_MONTH = 4.33;
 
@@ -42,6 +51,12 @@ const money = (v: number) =>
     maximumFractionDigits: 2,
   });
 
+// Stable palette for the spending-by-category bars.
+const CATEGORY_COLORS = [
+  "#6366f1", "#ec4899", "#f59e0b", "#10b981",
+  "#3b82f6", "#ef4444", "#8b5cf6", "#14b8a6",
+];
+
 interface HistoryTabProps {
   totalNetIncome: number;
   totalExpenses: number;
@@ -49,6 +64,8 @@ interface HistoryTabProps {
   totalSavingsCont: number;
   weeklySurplus: number;
   incomes: IncomeStream[];
+  expenses: BudgetElement[];
+  netWorthHistory: NetWorthPoint[];
   session: Session | null;
   payslipRefreshKey?: number;
 }
@@ -60,6 +77,8 @@ export default function HistoryTab({
   totalSavingsCont,
   weeklySurplus,
   incomes,
+  expenses,
+  netWorthHistory,
   session,
   payslipRefreshKey = 0,
 }: HistoryTabProps) {
@@ -241,6 +260,35 @@ export default function HistoryTab({
     balance: Number(Number(s.total_debt_balance).toFixed(2)),
   }));
 
+  // Spending by category — every expense normalised to a weekly figure so
+  // weekly and monthly bills are compared on the same footing.
+  const categoryRows = (() => {
+    const map = new Map<string, number>();
+    for (const e of expenses) {
+      const weekly =
+        e.frequency === "monthly" ? e.amount / (52 / 12) : e.amount;
+      const key = e.category || "General";
+      map.set(key, (map.get(key) || 0) + weekly);
+    }
+    return [...map.entries()]
+      .map(([category, weekly]) => ({ category, weekly }))
+      .sort((a, b) => b.weekly - a.weekly);
+  })();
+  const categoryTotal = categoryRows.reduce((s, r) => s + r.weekly, 0);
+
+  // Net worth trend = savings + vault − debt, one point per tracked week.
+  const netWorthChart = netWorthHistory
+    .slice()
+    .sort((a, b) => a.week.localeCompare(b.week))
+    .map((p) => ({
+      week: format(parseISO(p.week), "d MMM"),
+      netWorth: Number(p.netWorth.toFixed(2)),
+    }));
+  const latestNetWorth =
+    netWorthChart.length > 0
+      ? netWorthChart[netWorthChart.length - 1].netWorth
+      : 0;
+
   return (
     <div className="space-y-6">
       {/* Financial Log */}
@@ -274,6 +322,61 @@ export default function HistoryTab({
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Spending by Category */}
+      <div className="glass-card p-4 md:p-6 border border-white/60">
+        <h2 className="text-xl font-bold text-gray-900 mb-1 flex items-center gap-2">
+          <PieChartIcon className="w-5 h-5 text-indigo-600" />
+          Spending by Category
+        </h2>
+        <p className="text-sm text-gray-500 mb-6">
+          Where your weekly expenses go, largest first.
+        </p>
+        {categoryRows.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-8 italic">
+            No expenses added yet — add some on the Home tab to see the breakdown.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {categoryRows.map((row, i) => {
+              const pct = categoryTotal > 0 ? (row.weekly / categoryTotal) * 100 : 0;
+              const color = CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+              return (
+                <div key={row.category}>
+                  <div className="flex items-center justify-between text-sm mb-1.5">
+                    <span className="font-semibold text-gray-700 flex items-center gap-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: color }}
+                      />
+                      {row.category}
+                    </span>
+                    <span className="text-gray-500">
+                      <span className="font-bold text-gray-800">${money(row.weekly)}</span>
+                      /wk · {pct.toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden shadow-inner">
+                    <div
+                      className="h-2.5 rounded-full transition-all duration-700 ease-out"
+                      style={{ width: `${pct}%`, backgroundColor: color }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+            <div className="flex items-center justify-between pt-3 mt-1 border-t border-gray-100 text-sm">
+              <span className="font-bold text-gray-700">Total weekly expenses</span>
+              <span className="font-bold text-gray-900">
+                ${money(categoryTotal)}/wk
+                <span className="text-gray-400 font-medium">
+                  {" "}· ${money(categoryTotal * WEEKS_PER_MONTH)}/mo
+                </span>
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Shift Calendar */}
@@ -633,6 +736,55 @@ export default function HistoryTab({
               ))
             )}
           </div>
+        )}
+      </div>
+
+      {/* Net Worth Over Time */}
+      <div className="glass-card p-4 md:p-6 border border-white/60">
+        <div className="flex items-start justify-between mb-6 gap-4">
+          <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <Wallet className="w-5 h-5 text-indigo-600" />
+            Net Worth Over Time
+          </h2>
+          {netWorthChart.length > 0 && (
+            <div className="text-right">
+              <p className="text-[11px] text-gray-400 uppercase tracking-wider font-semibold">
+                Current
+              </p>
+              <p
+                className={`text-lg font-extrabold ${latestNetWorth >= 0 ? "text-emerald-600" : "text-rose-600"}`}
+              >
+                ${money(latestNetWorth)}
+              </p>
+            </div>
+          )}
+        </div>
+        {netWorthChart.length < 2 ? (
+          <div className="text-center py-12 text-gray-400 text-sm">
+            Not enough data yet — your net worth (savings + cash vault − debt)
+            chart appears after a couple of weeks of tracking.
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={netWorthChart} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="week" tick={{ fontSize: 12 }} />
+              <YAxis
+                tickFormatter={(v: number) => `$${(v / 1000).toFixed(1)}k`}
+                tick={{ fontSize: 12 }}
+                width={50}
+              />
+              <Tooltip formatter={(v) => [`$${money(Number(v))}`, "Net Worth"]} />
+              <Line
+                type="monotone"
+                dataKey="netWorth"
+                stroke="#10b981"
+                strokeWidth={2}
+                dot={{ r: 3 }}
+                activeDot={{ r: 5 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
         )}
       </div>
 

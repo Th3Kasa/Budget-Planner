@@ -11,7 +11,7 @@ import { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { addDays, format, startOfWeek } from "date-fns";
 import { cn } from "../lib/utils";
-import { isIncomeActive, summarizeIncome } from "../lib/income";
+import { isIncomeActive, summarizeIncome, weekStartOf } from "../lib/income";
 import { DEFAULT_JOBSEEKER_MAX_FORTNIGHTLY } from "../lib/calculators";
 import {
   calculateAutoAllocation,
@@ -362,6 +362,44 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     snapshotPaid,
   ]);
 
+  // ----- Net worth tracking -----
+  // Net worth = money saved + banked cash − what you still owe. We checkpoint
+  // one point per week into the synced budget blob (no extra table needed), so
+  // the History tab can chart the trend over time. The setState returns `prev`
+  // untouched when nothing changed, so this never loops.
+  const totalSaved = state.savings.reduce(
+    (acc, s) => acc + (s.currentAmount || 0),
+    0,
+  );
+  const vaultBalance = state.cashBalance || 0;
+  const netWorth = totalSaved + vaultBalance - snapshotDebtBalance;
+  useEffect(() => {
+    const week = weekStartOf();
+    const point = {
+      week,
+      savings: round2(totalSaved),
+      vault: round2(vaultBalance),
+      debt: round2(snapshotDebtBalance),
+      netWorth: round2(netWorth),
+    };
+    setState((prev) => {
+      const hist = prev.netWorthHistory ?? [];
+      const existing = hist.find((p) => p.week === week);
+      if (
+        existing &&
+        existing.savings === point.savings &&
+        existing.vault === point.vault &&
+        existing.debt === point.debt
+      ) {
+        return prev; // unchanged this week — skip the write so we don't loop
+      }
+      const netWorthHistory = existing
+        ? hist.map((p) => (p.week === week ? point : p))
+        : [...hist, point];
+      return { ...prev, netWorthHistory };
+    });
+  }, [totalSaved, vaultBalance, snapshotDebtBalance, netWorth]);
+
   const totalExpenses = state.expenses.reduce(
     (acc, el) =>
       acc + (el.frequency === "monthly" ? el.amount / (52 / 12) : el.amount),
@@ -374,6 +412,10 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   );
   const totalOutgoings = totalExpenses + totalDebts + totalSavingsCont;
   const weeklySurplus = summary.totalNetIncome - totalOutgoings;
+
+  // Rule of thumb: an emergency fund should cover ~3 months of expenses.
+  // Weekly expenses → monthly (× 52/12) → three months.
+  const recommendedEmergencyFund = round2(totalExpenses * (52 / 12) * 3);
 
   // ----- Modal handlers -----
 
@@ -709,6 +751,29 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         savings: prev.savings.map((s) =>
           s.id === id ? { ...s, splitWeight: undefined, isManuallyWeighted: false } : s,
         ),
+      }),
+    );
+  };
+
+  // Spin up an Emergency Fund goal from the 3-months-of-expenses suggestion.
+  // Seeded as High Priority (tier 1) so the engine funds it ahead of other
+  // goals, and left auto (unlocked) so it shares the savings pool by tier.
+  const createEmergencyFund = (target: number) => {
+    setState((prev) =>
+      calculateAutoAllocation({
+        ...prev,
+        savings: [
+          ...prev.savings,
+          {
+            id: Date.now().toString(),
+            name: "Emergency Fund",
+            targetAmount: round2(Math.max(0, target)),
+            currentAmount: 0,
+            weeklyContribution: 0,
+            color: GOAL_COLORS[prev.savings.length % GOAL_COLORS.length],
+            priorityTier: 1,
+          },
+        ],
       }),
     );
   };
@@ -1123,6 +1188,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               totalSavingsCont={totalSavingsCont}
               weeklySurplus={weeklySurplus}
               incomes={state.incomes}
+              expenses={state.expenses}
+              netWorthHistory={state.netWorthHistory ?? []}
               session={session}
               payslipRefreshKey={payslipRefreshKey}
             />
@@ -1131,6 +1198,8 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           {activeTab === "goals" && (
             <GoalsTab
               savings={state.savings}
+              recommendedEmergencyFund={recommendedEmergencyFund}
+              onCreateEmergencyFund={createEmergencyFund}
               onEditGoal={(goal) => openEditModal("savings", goal)}
               onRemoveGoal={(id) => removeItem("savings", id)}
               onAddGoal={() => openAddModal("savings")}
