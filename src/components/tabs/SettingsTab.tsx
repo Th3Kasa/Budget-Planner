@@ -9,9 +9,14 @@ import {
   KeyRound,
   Landmark,
   Loader2,
+  Monitor,
+  Moon,
+  Palette,
   ShieldCheck,
+  Sun,
   Trash2,
 } from "lucide-react";
+import { getTheme, setTheme, Theme } from "../../lib/theme";
 
 interface SettingsTabProps {
   centrelinkEnabled: boolean;
@@ -32,6 +37,12 @@ export default function SettingsTab({
   onExportCsv,
   onResetData,
 }: SettingsTabProps) {
+  const [theme, setThemeState] = useState<Theme>(() => getTheme());
+  const chooseTheme = (t: Theme) => {
+    setThemeState(t);
+    setTheme(t);
+  };
+
   const [currentPinInput, setCurrentPinInput] = useState("");
   const [newPinInput, setNewPinInput] = useState("");
   const [confirmPinInput, setConfirmPinInput] = useState("");
@@ -112,6 +123,43 @@ export default function SettingsTab({
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200 max-w-4xl mx-auto">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Appearance */}
+        <div className="glass-card p-6 border border-gray-100/50 md:col-span-2">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-full bg-violet-50 flex items-center justify-center text-violet-600">
+              <Palette className="w-5 h-5 flex-shrink-0" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900">Appearance</h3>
+              <p className="text-xs text-gray-500">
+                Choose a light or dark theme, or follow your device.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3 mt-2">
+            {(
+              [
+                { key: "light", label: "Light", icon: Sun },
+                { key: "dark", label: "Dark", icon: Moon },
+                { key: "system", label: "System", icon: Monitor },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => chooseTheme(opt.key)}
+                className={`flex flex-col items-center justify-center gap-2 py-4 rounded-2xl border transition ${
+                  theme === opt.key
+                    ? "border-indigo-400 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/30"
+                    : "border-gray-200 bg-white text-gray-600 hover:border-indigo-200 hover:text-indigo-600"
+                }`}
+              >
+                <opt.icon className="w-5 h-5" />
+                <span className="text-sm font-semibold">{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* PIN Management Card */}
         <div className="glass-card p-6 border border-gray-100/50 flex flex-col justify-between">
           <div>

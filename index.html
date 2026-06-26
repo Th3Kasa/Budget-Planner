@@ -9,6 +9,23 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Budget Planner" />
     <link rel="manifest" href="/manifest.json" />
+    <script>
+      // Apply the saved theme before first paint to avoid a flash of light.
+      (function () {
+        try {
+          var t = localStorage.getItem("theme") || "system";
+          var dark =
+            t === "dark" ||
+            (t === "system" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) {
+            document.documentElement.classList.add("dark");
+            var m = document.querySelector('meta[name="theme-color"]');
+            if (m) m.setAttribute("content", "#0f1729");
+          }
+        } catch (e) {}
+      })();
+    </script>
     <title>Budget Planner</title>
   </head>
   <body>

@@ -55,3 +55,104 @@ body {
 #root {
   height: 100dvh;
 }
+
+/* ============================================================
+   Dark theme. Class-based (`html.dark`), applied via lib/theme.
+   These rules are intentionally unlayered so they override the
+   generated Tailwind utility classes the app uses, without
+   touching every component's markup.
+   ============================================================ */
+.dark body {
+  background-color: #0f1729;
+  color: #e2e8f0;
+}
+.dark .bg-\[\#F3F4F9\] {
+  background-color: #0f1729;
+}
+.dark .text-\[\#1A1A24\] {
+  color: #e2e8f0;
+}
+
+/* Glass cards */
+.dark .glass-card {
+  background-color: rgba(30, 41, 59, 0.72);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.dark .glass-card-hover:hover {
+  background-color: rgba(30, 41, 59, 0.92);
+}
+
+/* White surfaces → slate */
+.dark .bg-white { background-color: #1e293b; }
+.dark .bg-white\/90 { background-color: rgba(30, 41, 59, 0.9); }
+.dark .bg-white\/80 { background-color: rgba(30, 41, 59, 0.8); }
+.dark .bg-white\/70 { background-color: rgba(30, 41, 59, 0.7); }
+.dark .bg-white\/60 { background-color: rgba(30, 41, 59, 0.6); }
+.dark .bg-white\/50 { background-color: rgba(30, 41, 59, 0.5); }
+.dark .bg-white\/40 { background-color: rgba(30, 41, 59, 0.4); }
+
+/* Gray surfaces */
+.dark .bg-gray-50,
+.dark .bg-gray-50\/50,
+.dark .bg-gray-50\/30,
+.dark .bg-gray-50\/20 { background-color: rgba(255, 255, 255, 0.04); }
+.dark .bg-gray-100 { background-color: #334155; }
+.dark .bg-gray-200 { background-color: #475569; }
+
+/* Text */
+.dark .text-gray-900 { color: #f1f5f9; }
+.dark .text-gray-800 { color: #e2e8f0; }
+.dark .text-gray-700 { color: #cbd5e1; }
+.dark .text-gray-600 { color: #b3c0d1; }
+.dark .text-gray-500 { color: #94a3b8; }
+.dark .text-gray-400 { color: #7c8aa0; }
+.dark .text-gray-300 { color: #56657c; }
+
+/* Borders */
+.dark .border-gray-100,
+.dark .border-gray-100\/50 { border-color: rgba(255, 255, 255, 0.06); }
+.dark .border-gray-200 { border-color: rgba(255, 255, 255, 0.1); }
+.dark .border-white\/60,
+.dark .border-white\/40,
+.dark .border-white\/30 { border-color: rgba(255, 255, 255, 0.08); }
+
+/* Soft gradient accent cards → faint flat tint so they don't glare */
+.dark [class*="bg-gradient-to-"] {
+  background-image: none;
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* Pastel colour chips → translucent tints (coloured text stays legible) */
+.dark .bg-indigo-50 { background-color: rgba(99, 102, 241, 0.15); }
+.dark .bg-indigo-100 { background-color: rgba(99, 102, 241, 0.24); }
+.dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.14); }
+.dark .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.22); }
+.dark .bg-red-50 { background-color: rgba(239, 68, 68, 0.14); }
+.dark .bg-red-100 { background-color: rgba(239, 68, 68, 0.22); }
+.dark .bg-rose-50 { background-color: rgba(244, 63, 94, 0.14); }
+.dark .bg-amber-50 { background-color: rgba(245, 158, 11, 0.14); }
+.dark .bg-amber-100 { background-color: rgba(245, 158, 11, 0.22); }
+.dark .bg-blue-50 { background-color: rgba(59, 130, 246, 0.14); }
+.dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.22); }
+.dark .bg-violet-50 { background-color: rgba(139, 92, 246, 0.14); }
+.dark .bg-pink-50 { background-color: rgba(236, 72, 153, 0.14); }
+.dark .bg-pink-100 { background-color: rgba(236, 72, 153, 0.22); }
+.dark .bg-green-50 { background-color: rgba(34, 197, 94, 0.14); }
+.dark .bg-green-100 { background-color: rgba(34, 197, 94, 0.22); }
+
+/* Form controls */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: #0f1729;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+}
+.dark input::placeholder,
+.dark textarea::placeholder { color: #64748b; }
+.dark select option { background-color: #1e293b; color: #e2e8f0; }
+
+/* Misc */
+.dark .shadow-inner { box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.3); }
+.dark .custom-scrollbar { scrollbar-color: #334155 transparent; }
