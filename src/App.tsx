@@ -3,10 +3,15 @@ import { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 import Dashboard from "./components/Dashboard";
 import Login from "./components/Login";
+import LockScreen from "./components/LockScreen";
+import { isPinSet } from "./lib/auth";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  // App-lock: locked on load only when the user has set a PIN. No PIN → never
+  // locks, so existing users are unaffected.
+  const [unlocked, setUnlocked] = useState(() => !isPinSet());
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session: s } }) => {
@@ -38,6 +43,18 @@ export default function App() {
 
   if (!session) {
     return <Login onLogin={() => {}} />;
+  }
+
+  if (!unlocked) {
+    return (
+      <LockScreen
+        onUnlock={() => setUnlocked(true)}
+        onSignOut={async () => {
+          await supabase.auth.signOut();
+          setUnlocked(true); // reset for the next session
+        }}
+      />
+    );
   }
 
   return (
