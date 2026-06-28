@@ -17,6 +17,16 @@ import {
   Trash2,
 } from "lucide-react";
 import { getTheme, setTheme, Theme } from "../../lib/theme";
+import {
+  isPinSet,
+  setPin as savePin,
+  verifyPin,
+  clearPin,
+  isWebAuthnAvailable,
+  isBiometricRegistered,
+  registerBiometric,
+  clearBiometric,
+} from "../../lib/auth";
 
 interface SettingsTabProps {
   centrelinkEnabled: boolean;
@@ -43,30 +53,37 @@ export default function SettingsTab({
     setTheme(t);
   };
 
+  const [pinConfigured, setPinConfigured] = useState(() => isPinSet());
   const [currentPinInput, setCurrentPinInput] = useState("");
   const [newPinInput, setNewPinInput] = useState("");
   const [confirmPinInput, setConfirmPinInput] = useState("");
   const [pinSuccessMsg, setPinSuccessMsg] = useState("");
   const [pinErrorMsg, setPinErrorMsg] = useState("");
+  const [pinBusy, setPinBusy] = useState(false);
 
-  const [isBiometricRegistered, setIsBiometricRegistered] = useState(
-    () => localStorage.getItem("biometric_enabled") === "true",
+  const bioAvailable = isWebAuthnAvailable();
+  const [bioRegistered, setBioRegistered] = useState(() =>
+    isBiometricRegistered(),
   );
-  const [showBioScannerReg, setShowBioScannerReg] = useState(false);
-  const [bioRegStep, setBioRegStep] = useState(0);
-  const [bioRegText, setBioRegText] = useState("");
+  const [bioBusy, setBioBusy] = useState(false);
+  const [bioError, setBioError] = useState("");
 
-  const handleChangePin = (e: React.FormEvent) => {
+  const resetPinFields = () => {
+    setCurrentPinInput("");
+    setNewPinInput("");
+    setConfirmPinInput("");
+  };
+
+  const handleChangePin = async (e: React.FormEvent) => {
     e.preventDefault();
     setPinSuccessMsg("");
     setPinErrorMsg("");
 
-    const savedPin = localStorage.getItem("login_pin") || "0000";
-    if (currentPinInput !== savedPin) {
+    if (pinConfigured && !(await verifyPin(currentPinInput))) {
       setPinErrorMsg("Current PIN is incorrect.");
       return;
     }
-    if (newPinInput.length !== 4 || !/^\d+$/.test(newPinInput)) {
+    if (newPinInput.length !== 4 || !/^\d{4}$/.test(newPinInput)) {
       setPinErrorMsg("New PIN must be exactly 4 digits.");
       return;
     }
@@ -75,39 +92,48 @@ export default function SettingsTab({
       return;
     }
 
-    localStorage.setItem("login_pin", newPinInput);
-    setPinSuccessMsg("PIN updated successfully!");
-    setCurrentPinInput("");
-    setNewPinInput("");
-    setConfirmPinInput("");
+    setPinBusy(true);
+    await savePin(newPinInput);
+    setPinBusy(false);
+    setPinConfigured(true);
+    setPinSuccessMsg(
+      "PIN saved. Your budget will be locked next time you open the app.",
+    );
+    resetPinFields();
   };
 
-  const handleStartBiometricReg = () => {
-    setShowBioScannerReg(true);
-    setBioRegStep(1);
-    setBioRegText("Initializing secure biometric sensor...");
-
-    setTimeout(() => {
-      setBioRegStep(2);
-      setBioRegText("Present your fingerprint or face to the camera...");
-      setTimeout(() => {
-        setBioRegStep(3);
-        setBioRegText("Verifying credential keys & registering device security keys...");
-        setTimeout(() => {
-          setBioRegStep(4);
-          setBioRegText("Biometrics registered successfully!");
-          localStorage.setItem("biometric_enabled", "true");
-          setIsBiometricRegistered(true);
-          setTimeout(() => setShowBioScannerReg(false), 1500);
-        }, 1200);
-      }, 1500);
-    }, 1000);
+  const handleRemovePin = async () => {
+    setPinSuccessMsg("");
+    setPinErrorMsg("");
+    if (!(await verifyPin(currentPinInput))) {
+      setPinErrorMsg("Enter your current PIN to remove the lock.");
+      return;
+    }
+    clearPin();
+    clearBiometric(); // biometric only makes sense alongside a PIN
+    setPinConfigured(false);
+    setBioRegistered(false);
+    setPinSuccessMsg("PIN lock removed.");
+    resetPinFields();
   };
 
-  const handleRemoveBiometricReg = () => {
-    localStorage.removeItem("biometric_enabled");
-    setIsBiometricRegistered(false);
-    alert("Biometric credential registration has been cleared.");
+  const handleRegisterBiometric = async () => {
+    setBioError("");
+    setBioBusy(true);
+    try {
+      const ok = await registerBiometric("Budget Planner");
+      if (ok) setBioRegistered(true);
+      else setBioError("Registration was cancelled or isn't supported here.");
+    } catch {
+      setBioError("Couldn't register biometrics on this device.");
+    } finally {
+      setBioBusy(false);
+    }
+  };
+
+  const handleRemoveBiometric = () => {
+    clearBiometric();
+    setBioRegistered(false);
   };
 
   const handleReset = () => {
@@ -119,6 +145,25 @@ export default function SettingsTab({
       onResetData();
     }
   };
+
+  const pinInputs: { label: string; value: string; set: (v: string) => void }[] =
+    [
+      ...(pinConfigured
+        ? [
+            {
+              label: "Current PIN",
+              value: currentPinInput,
+              set: setCurrentPinInput,
+            },
+          ]
+        : []),
+      { label: "New PIN", value: newPinInput, set: setNewPinInput },
+      {
+        label: "Confirm New PIN",
+        value: confirmPinInput,
+        set: setConfirmPinInput,
+      },
+    ];
 
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200 max-w-4xl mx-auto">
@@ -168,33 +213,24 @@ export default function SettingsTab({
                 <KeyRound className="w-5 h-5 flex-shrink-0" />
               </div>
               <div>
-                <h3 className="font-bold text-gray-900">Access Login PIN</h3>
+                <h3 className="font-bold text-gray-900">App-Lock PIN</h3>
                 <p className="text-xs text-gray-500">
-                  Update your 4-digit screen lock code.
+                  {pinConfigured
+                    ? "Your budget is locked with a 4-digit PIN."
+                    : "Set a 4-digit PIN to lock your budget."}
                 </p>
               </div>
             </div>
 
             <form onSubmit={handleChangePin} className="space-y-4 mt-6">
-              {[
-                {
-                  label: "Current PIN",
-                  value: currentPinInput,
-                  set: setCurrentPinInput,
-                },
-                { label: "New PIN", value: newPinInput, set: setNewPinInput },
-                {
-                  label: "Confirm New PIN",
-                  value: confirmPinInput,
-                  set: setConfirmPinInput,
-                },
-              ].map((field) => (
+              {pinInputs.map((field) => (
                 <div key={field.label}>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                     {field.label}
                   </label>
                   <input
                     type="password"
+                    inputMode="numeric"
                     maxLength={4}
                     className="w-full text-center tracking-[0.5em] text-lg font-bold px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                     placeholder="••••"
@@ -222,12 +258,27 @@ export default function SettingsTab({
 
               <button
                 type="submit"
-                className="w-full bg-indigo-600 text-white font-medium py-3 rounded-xl hover:bg-indigo-700 transition-colors mt-2"
+                disabled={pinBusy}
+                className="w-full bg-indigo-600 text-white font-medium py-3 rounded-xl hover:bg-indigo-700 transition-colors mt-2 flex items-center justify-center gap-2 disabled:opacity-60"
               >
-                Change PIN Code
+                {pinBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+                {pinConfigured ? "Change PIN" : "Set PIN"}
               </button>
+              {pinConfigured && (
+                <button
+                  type="button"
+                  onClick={handleRemovePin}
+                  className="w-full bg-white border border-red-200 text-red-600 font-semibold py-2.5 rounded-xl hover:bg-red-50 hover:border-red-300 transition text-xs"
+                >
+                  Remove PIN lock (enter current PIN above)
+                </button>
+              )}
             </form>
           </div>
+          <p className="text-[10px] text-gray-400 mt-4 leading-relaxed">
+            Stored only on this device as a salted PBKDF2-SHA-256 hash — never in
+            plain text, never uploaded.
+          </p>
         </div>
 
         {/* Biometrics Management */}
@@ -239,10 +290,10 @@ export default function SettingsTab({
               </div>
               <div>
                 <h3 className="font-bold text-gray-900">
-                  Biometric Credentials
+                  Biometric Unlock
                 </h3>
                 <p className="text-xs text-gray-500">
-                  Enable Face ID / fingerprint login.
+                  Use Face ID / fingerprint to unlock.
                 </p>
               </div>
             </div>
@@ -253,9 +304,13 @@ export default function SettingsTab({
                   DEVICE STATUS
                 </span>
                 <span
-                  className={`text-[10px] uppercase font-bold px-2 py-1 rounded ${isBiometricRegistered ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-600"}`}
+                  className={`text-[10px] uppercase font-bold px-2 py-1 rounded ${
+                    bioRegistered
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-gray-100 text-gray-600"
+                  }`}
                 >
-                  {isBiometricRegistered ? "Registered and Active" : "Not Registered"}
+                  {bioRegistered ? "Registered" : "Not Registered"}
                 </span>
               </div>
 
@@ -264,37 +319,51 @@ export default function SettingsTab({
                   <ShieldCheck className="w-5 h-5 text-indigo-500 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="text-xs font-semibold text-gray-800">
-                      Local Storage Only
+                      Real WebAuthn credential
                     </p>
                     <p className="text-[11px] text-gray-500 mt-0.5">
-                      The biometric flag is saved locally in this browser and
-                      never leaves your device.
+                      Uses your device's platform authenticator. The credential
+                      stays on this device and never leaves it.
                     </p>
                   </div>
                 </div>
 
-                {isBiometricRegistered ? (
+                {!bioAvailable ? (
+                  <div className="text-xs bg-amber-50 text-amber-700 font-medium px-3 py-2.5 rounded-xl border border-amber-100">
+                    This browser/device doesn't support biometric (WebAuthn)
+                    unlock.
+                  </div>
+                ) : !pinConfigured ? (
+                  <div className="text-xs bg-amber-50 text-amber-700 font-medium px-3 py-2.5 rounded-xl border border-amber-100">
+                    Set an app-lock PIN first — biometrics unlock alongside it.
+                  </div>
+                ) : bioRegistered ? (
                   <div className="space-y-3 pt-2">
                     <div className="text-xs bg-emerald-50 text-emerald-700 font-bold px-3 py-2.5 rounded-xl border border-emerald-100 flex items-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-600" />
-                      Biometrics are ready for your next screen unlock.
+                      Biometrics are ready for your next unlock.
                     </div>
                     <button
-                      onClick={handleRemoveBiometricReg}
+                      onClick={handleRemoveBiometric}
                       className="w-full bg-white border border-red-200 text-red-600 font-semibold py-2.5 rounded-xl hover:bg-red-50 hover:border-red-300 transition-colors text-xs"
                     >
-                      Deregister Fingerprint / Face ID
+                      Remove Face ID / Fingerprint
                     </button>
                   </div>
                 ) : (
                   <div className="space-y-3 pt-2">
-                    <p className="text-[11px] text-gray-500">
-                      Register your device for fast, PIN-free dashboard logins.
-                    </p>
+                    {bioError && (
+                      <div className="text-xs bg-red-50 text-red-600 font-medium p-3 rounded-xl border border-red-100 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                        {bioError}
+                      </div>
+                    )}
                     <button
-                      onClick={handleStartBiometricReg}
-                      className="w-full bg-emerald-600 text-white font-medium py-3 rounded-xl hover:bg-emerald-700 transition shadow"
+                      onClick={handleRegisterBiometric}
+                      disabled={bioBusy}
+                      className="w-full bg-emerald-600 text-white font-medium py-3 rounded-xl hover:bg-emerald-700 transition shadow flex items-center justify-center gap-2 disabled:opacity-60"
                     >
+                      {bioBusy && <Loader2 className="w-4 h-4 animate-spin" />}
                       Register Face ID / Touch ID
                     </button>
                   </div>
@@ -304,8 +373,8 @@ export default function SettingsTab({
           </div>
 
           <div className="text-[10px] text-gray-400 mt-6 text-center leading-relaxed">
-            Stored in browser local storage. If you clear your browser data you
-            will need to log back in with your PIN.
+            Clearing your browser data removes the local PIN and biometric
+            credential; you'll just sign in again with your password.
           </div>
         </div>
 
@@ -444,46 +513,6 @@ export default function SettingsTab({
           </p>
         </div>
       </div>
-
-      {/* Biometric Registration Modal */}
-      {showBioScannerReg && (
-        <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-xs w-full text-center shadow-2xl border border-gray-100 relative animate-in zoom-in-95 duration-200">
-            <div className="relative w-24 h-24 mx-auto mb-6 flex items-center justify-center">
-              <div className="absolute inset-0 rounded-full border-4 border-indigo-100 animate-ping opacity-75" />
-              <div className="absolute inset-2 rounded-full border-4 border-indigo-200 animate-pulse" />
-              <div
-                className={`w-16 h-16 rounded-full flex items-center justify-center relative z-10 ${bioRegStep === 4 ? "bg-emerald-500 text-white" : "bg-indigo-600 text-white animate-pulse"}`}
-              >
-                {bioRegStep === 4 ? (
-                  <CheckCircle2 className="w-10 h-10" />
-                ) : (
-                  <Fingerprint className="w-10 h-10" />
-                )}
-              </div>
-            </div>
-
-            <h3 className="text-lg font-bold text-gray-900 mb-2">
-              {bioRegStep === 4 ? "Registration Successful" : "Registering Biometrics"}
-            </h3>
-
-            <div className="flex items-center justify-center gap-2 text-sm text-gray-500 min-h-[40px]">
-              {bioRegStep < 4 && (
-                <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
-              )}
-              <span
-                className={
-                  bioRegStep === 4
-                    ? "text-emerald-600 font-semibold text-xs"
-                    : "text-xs"
-                }
-              >
-                {bioRegText}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
