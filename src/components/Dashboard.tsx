@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Home,
   LogOut,
@@ -36,6 +36,7 @@ import HomeTab from "./tabs/HomeTab";
 import HistoryTab from "./tabs/HistoryTab";
 import GoalsTab from "./tabs/GoalsTab";
 import SettingsTab from "./tabs/SettingsTab";
+import Celebration from "./Celebration";
 
 interface DashboardProps {
   session: Session | null;
@@ -166,6 +167,60 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   const [state, setState] = useState<BudgetState>(loadInitialState);
   const [activeTab, setActiveTab] =
     useState<keyof typeof TAB_COPY>("home");
+
+  // Milestone celebrations: confetti + toast when a savings goal is fully
+  // funded or a debt is cleared. The ref baselines on the first render so
+  // completions that already existed on load don't fire — only fresh ones do.
+  const [celebration, setCelebration] = useState<{
+    title: string;
+    subtitle?: string;
+  } | null>(null);
+  const celebratedRef = useRef<{
+    goals: Set<string>;
+    debts: Set<string>;
+  } | null>(null);
+  useEffect(() => {
+    const goalsDone = new Set(
+      state.savings
+        .filter(
+          (s) =>
+            s.targetAmount > 0 &&
+            (s.currentAmount || 0) >= s.targetAmount - 0.01,
+        )
+        .map((s) => s.id),
+    );
+    const debtsDone = new Set(
+      state.debts
+        .filter(
+          (d) =>
+            d.totalBalance !== undefined &&
+            (d.originalBalance || 0) > 0 &&
+            d.totalBalance <= 0.01,
+        )
+        .map((d) => d.id),
+    );
+    if (celebratedRef.current === null) {
+      celebratedRef.current = { goals: goalsDone, debts: debtsDone };
+      return;
+    }
+    const newGoal = state.savings.find(
+      (s) => goalsDone.has(s.id) && !celebratedRef.current!.goals.has(s.id),
+    );
+    const newDebt = state.debts.find(
+      (d) => debtsDone.has(d.id) && !celebratedRef.current!.debts.has(d.id),
+    );
+    celebratedRef.current = { goals: goalsDone, debts: debtsDone };
+    if (newGoal)
+      setCelebration({
+        title: "Goal complete! 🎯",
+        subtitle: `${newGoal.name} is fully funded.`,
+      });
+    else if (newDebt)
+      setCelebration({
+        title: "Debt cleared! 💪",
+        subtitle: `${newDebt.name} is paid off.`,
+      });
+  }, [state.savings, state.debts]);
 
   // Add/Edit modal
   const [isAddingItem, setIsAddingItem] = useState(false);
@@ -451,6 +506,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       totalBalance: String(anyItem.originalBalance || anyItem.totalBalance || ""),
       category: anyItem.category || "General",
       priorityTier: String(anyItem.priorityTier ?? 3),
+      deadline: anyItem.deadline || "",
       type: anyItem.type || "casual",
       isCash: anyItem.isCash || false,
       hourlyRate: String(anyItem.hourlyRate || ""),
@@ -541,6 +597,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
                       ? { weeklyContribution: manualContribution, isLocked: true }
                       : { isLocked: false }),
                     priorityTier: tier,
+                    deadline: fields.deadline || undefined,
                   }
                 : item,
             ),
@@ -556,6 +613,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           color: GOAL_COLORS[prev.savings.length % GOAL_COLORS.length],
           isLocked: lockGoal,
           priorityTier: tier,
+          deadline: fields.deadline || undefined,
         };
         return calculateAutoAllocation({
           ...prev,
@@ -1236,6 +1294,14 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
               onClose={closeModal}
               onSubmit={handleSubmitItem}
               onPayslipArchive={handlePayslipArchive}
+            />
+          )}
+
+          {celebration && (
+            <Celebration
+              title={celebration.title}
+              subtitle={celebration.subtitle}
+              onDone={() => setCelebration(null)}
             />
           )}
         </div>
