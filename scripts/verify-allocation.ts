@@ -96,6 +96,42 @@ const base: BudgetState = {
   check("solo emergency goal still receives windfall", em.currentAmount! >= 999.9, `current=${em.currentAmount!.toFixed(2)}`);
 }
 
+// --- Test 4b: explicit savings priorities fund the chosen goals first ---
+{
+  // base has car $5000 + zip $40 debts and two goals (biz, em). Direct a $1000
+  // windfall: $600 to the Emergency Fund goal explicitly, the rest auto-spreads
+  // to debts. The chosen goal must get exactly its $600; the remaining $400
+  // then pays down debt proportionally.
+  const out = distributeWindfall(base, "Tax Return", 1000, undefined, [
+    { savingsId: "em", amount: 600 },
+  ]);
+  const em = out.savings.find((s) => s.id === "em")!;
+  const biz = out.savings.find((s) => s.id === "biz")!;
+  const debtPaid =
+    5000 - out.debts.find((d) => d.id === "car")!.totalBalance! +
+    (40 - out.debts.find((d) => d.id === "zip")!.totalBalance!);
+  check("windfall: explicit savings priority funded exactly", approx(em.currentAmount!, 600), `em=${em.currentAmount!.toFixed(2)}`);
+  check("windfall: non-priority goal untouched while debts remain", approx(biz.currentAmount || 0, 0), `biz=${(biz.currentAmount || 0).toFixed(2)}`);
+  check("windfall: remaining $400 spread to debts", approx(debtPaid, 400, 1), `debtPaid=${debtPaid.toFixed(2)}`);
+}
+
+// --- Test 4c: savings priority capped at the gap to target ---
+{
+  const nearFull: BudgetState = {
+    ...base,
+    debts: [],
+    savings: [{ id: "em", name: "Emergency Fund", targetAmount: 1000, currentAmount: 950, weeklyContribution: 0 }],
+  };
+  // Ask to put $500 into a goal that only has $50 of room: it takes $50, the
+  // remaining $450 lands in the Cash Vault.
+  const out = distributeWindfall(nearFull, "Bonus", 500, undefined, [
+    { savingsId: "em", amount: 500 },
+  ]);
+  const em = out.savings[0];
+  check("windfall: savings priority capped at gap to target", approx(em.currentAmount!, 1000), `em=${em.currentAmount!.toFixed(2)}`);
+  check("windfall: overflow past target goes to vault", approx(out.windfalls![0].unallocatedCash, 450), `vault=${out.windfalls![0].unallocatedCash.toFixed(2)}`);
+}
+
 // --- Test 5: undo restores balances exactly ---
 {
   const after = distributeWindfall(base, "Sold Bike", 6000);
