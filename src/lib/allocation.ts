@@ -238,14 +238,17 @@ export function calculateAutoAllocation(prevState: BudgetState): BudgetState {
 }
 
 // Distributes a one-off cash windfall against actual balances.
-// If debtPriorities is provided, those debts are paid first (up to each
-// specified amount), then the remainder is spread proportionally across
-// the other debts, then savings equally, then Cash Vault.
+// Explicit priorities are applied first — debtPriorities pay down specific
+// debts and savingsPriorities top up specific goals, each up to the amount you
+// entered. Whatever is left then spreads proportionally across the remaining
+// debts, fills the remaining savings goals by tiered priority, and any final
+// remainder lands in the Cash Vault.
 export function distributeWindfall(
   prevState: BudgetState,
   name: string,
   amount: number,
   debtPriorities?: { debtId: string; amount: number }[],
+  savingsPriorities?: { savingsId: string; amount: number }[],
 ): BudgetState {
   const debts = prevState.debts.map((d) => ({ ...d }));
   const savings = prevState.savings.map((s) => ({ ...s }));
@@ -265,8 +268,9 @@ export function distributeWindfall(
 
   let pool = amount;
   const prioritizedIds = new Set<string>();
+  const prioritizedSavingsIds = new Set<string>();
 
-  // 1. Apply explicit priority allocations first
+  // 1a. Apply explicit debt priorities first
   if (debtPriorities && debtPriorities.length > 0) {
     for (const p of debtPriorities) {
       const debt = debts.find((d) => d.id === p.debtId);
@@ -277,6 +281,26 @@ export function distributeWindfall(
         record("debt", debt.id, debt.name, allocation);
         pool -= allocation;
         prioritizedIds.add(p.debtId);
+      }
+    }
+  }
+
+  // 1b. Apply explicit savings priorities next — capped at the gap to target so
+  //     a goal is never funded past 100%.
+  if (savingsPriorities && savingsPriorities.length > 0) {
+    for (const p of savingsPriorities) {
+      const goal = savings.find((s) => s.id === p.savingsId);
+      if (!goal || pool <= 0.001) continue;
+      const gap =
+        goal.targetAmount > 0
+          ? Math.max(0, goal.targetAmount - (goal.currentAmount || 0))
+          : pool;
+      const allocation = Math.min(p.amount, gap, pool);
+      if (allocation > 0.001) {
+        goal.currentAmount = (goal.currentAmount || 0) + allocation;
+        record("savings", goal.id, goal.name, allocation);
+        pool -= allocation;
+        prioritizedSavingsIds.add(p.savingsId);
       }
     }
   }
@@ -293,9 +317,10 @@ export function distributeWindfall(
     },
   );
 
-  // 3. Whatever is left fills savings goals via tiered priority
+  // 3. Whatever is left fills the remaining savings goals via tiered priority
+  //    (goals you funded explicitly above are left out so they don't double-up).
   pool = allocateSavingsTiered(
-    savings,
+    savings.filter((s) => !prioritizedSavingsIds.has(s.id)),
     pool,
     (s) =>
       s.targetAmount > 0

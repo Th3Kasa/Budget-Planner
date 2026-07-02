@@ -777,8 +777,11 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     name: string,
     amount: number,
     debtPriorities?: { debtId: string; amount: number }[],
+    savingsPriorities?: { savingsId: string; amount: number }[],
   ) => {
-    setState((prev) => distributeWindfall(prev, name, amount, debtPriorities));
+    setState((prev) =>
+      distributeWindfall(prev, name, amount, debtPriorities, savingsPriorities),
+    );
   };
 
   const handleUndoWindfall = (id: string) => {

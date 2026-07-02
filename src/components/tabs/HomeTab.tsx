@@ -9,6 +9,7 @@ import {
   Plus,
   Receipt,
   RotateCcw,
+  Target,
   Trash2,
   TrendingUp,
   Wallet,
@@ -198,7 +199,12 @@ interface HomeTabProps {
   onResetDebtAllocation: (id: string) => void;
   debtStrategy: "snowball" | "balanced";
   onSetDebtStrategy: (strategy: "snowball" | "balanced") => void;
-  onRecordWindfall: (name: string, amount: number, priorities?: { debtId: string; amount: number }[]) => void;
+  onRecordWindfall: (
+    name: string,
+    amount: number,
+    priorities?: { debtId: string; amount: number }[],
+    savingsPriorities?: { savingsId: string; amount: number }[],
+  ) => void;
   onAdjustVault: (newBalance: number) => void;
   onUndoWindfall: (id: string) => void;
   onCommitWeek: () => Promise<void>;
@@ -280,6 +286,7 @@ export default function HomeTab({
   const [assetName, setAssetName] = useState("");
   const [assetAmount, setAssetAmount] = useState("");
   const [debtAllocations, setDebtAllocations] = useState<Record<string, string>>({});
+  const [savingsAllocations, setSavingsAllocations] = useState<Record<string, string>>({});
   const [editingDebtId, setEditingDebtId] = useState<string | null>(null);
   const [editingDebtValue, setEditingDebtValue] = useState("");
   const [commitState, setCommitState] = useState<"idle" | "loading" | "done">("idle");
@@ -329,6 +336,7 @@ export default function HomeTab({
     setAssetName("");
     setAssetAmount("");
     setDebtAllocations({});
+    setSavingsAllocations({});
   };
 
   const handleWindfallNext = (e: React.FormEvent) => {
@@ -337,6 +345,7 @@ export default function HomeTab({
     if (!assetName || !amount || amount <= 0) return;
     setWindfallStep("allocate");
     setDebtAllocations({});
+    setSavingsAllocations({});
   };
 
   const handleWindfallConfirm = () => {
@@ -345,14 +354,21 @@ export default function HomeTab({
     const priorities = Object.entries(debtAllocations)
       .filter(([, v]) => v !== "" && Number(v) > 0)
       .map(([debtId, v]) => ({ debtId, amount: Number(v) }));
-    onRecordWindfall(assetName, amount, priorities.length > 0 ? priorities : undefined);
+    const savingsPriorities = Object.entries(savingsAllocations)
+      .filter(([, v]) => v !== "" && Number(v) > 0)
+      .map(([savingsId, v]) => ({ savingsId, amount: Number(v) }));
+    onRecordWindfall(
+      assetName,
+      amount,
+      priorities.length > 0 ? priorities : undefined,
+      savingsPriorities.length > 0 ? savingsPriorities : undefined,
+    );
     closeWindfall();
   };
 
-  const totalAllocated = Object.values(debtAllocations).reduce(
-    (sum, v) => sum + (Number(v) || 0),
-    0,
-  );
+  const totalAllocated =
+    Object.values(debtAllocations).reduce((sum, v) => sum + (Number(v) || 0), 0) +
+    Object.values(savingsAllocations).reduce((sum, v) => sum + (Number(v) || 0), 0);
   const remainingToAllocate = Math.max(0, Number(assetAmount) - totalAllocated);
 
   const handleAdjustVault = (e: React.FormEvent) => {
@@ -1423,8 +1439,91 @@ export default function HomeTab({
                 </div>
               ) : (
                 <p className="text-sm text-gray-500 text-center py-2">
-                  No active debts — windfall will go to savings goals then vault.
+                  No active debts — allocate to savings goals below, then vault.
                 </p>
+              )}
+
+              {/* Savings goal allocation inputs */}
+              {savings.filter(
+                (s) => s.targetAmount <= 0 || (s.currentAmount || 0) < s.targetAmount,
+              ).length > 0 && (
+                <div className="space-y-3 pt-1">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Specify amounts for savings goals (optional)
+                  </p>
+                  {savings
+                    .filter(
+                      (s) =>
+                        s.targetAmount <= 0 || (s.currentAmount || 0) < s.targetAmount,
+                    )
+                    .map((goal) => {
+                      const room =
+                        goal.targetAmount > 0
+                          ? Math.max(0, goal.targetAmount - (goal.currentAmount || 0))
+                          : Infinity;
+                      return (
+                        <div
+                          key={goal.id}
+                          className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100"
+                        >
+                          <div
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-white flex-shrink-0"
+                            style={{ backgroundColor: goal.color || "#3b82f6" }}
+                          >
+                            <Target className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-800 truncate">
+                              {goal.name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {goal.targetAmount > 0
+                                ? `${money(goal.currentAmount || 0)} of ${money(goal.targetAmount)}`
+                                : "No target"}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const alreadyEntered =
+                                Number(savingsAllocations[goal.id]) || 0;
+                              const maxFill = Math.min(
+                                room,
+                                remainingToAllocate + alreadyEntered,
+                              );
+                              setSavingsAllocations((prev) => ({
+                                ...prev,
+                                [goal.id]: maxFill.toFixed(2),
+                              }));
+                            }}
+                            className="text-[10px] font-bold uppercase tracking-wide text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-1 rounded-lg flex-shrink-0 transition-colors"
+                          >
+                            {goal.targetAmount > 0 ? "Fill" : "Max"}
+                          </button>
+                          <div className="relative flex-shrink-0">
+                            <span className="absolute left-2.5 top-2 text-gray-400 text-sm pointer-events-none">
+                              $
+                            </span>
+                            <input
+                              type="number"
+                              min="0"
+                              max={Number.isFinite(room) ? room : undefined}
+                              step="0.01"
+                              placeholder="0.00"
+                              value={savingsAllocations[goal.id] || ""}
+                              onChange={(e) =>
+                                setSavingsAllocations((prev) => ({
+                                  ...prev,
+                                  [goal.id]: e.target.value,
+                                }))
+                              }
+                              className="w-24 pl-6 pr-2 py-1.5 text-sm bg-white border border-gray-200 rounded-lg outline-none focus:border-emerald-400 text-right"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
               )}
 
               <button
