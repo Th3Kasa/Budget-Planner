@@ -7,11 +7,29 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "../../src/lib/db/index.js";
 import * as schema from "../../src/lib/db/schema.js";
 
+function resolveBaseUrl(): string {
+  if (process.env.BETTER_AUTH_URL) return process.env.BETTER_AUTH_URL;
+  // Production alias, stable across deployments.
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL && process.env.VERCEL_ENV === "production") {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  // This specific deployment (previews).
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "http://localhost:3000";
+}
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: "pg", schema }),
 
   secret: process.env.BETTER_AUTH_SECRET,
-  baseURL: process.env.BETTER_AUTH_URL,
+  // Preview deployments get a different hostname every time, so an explicit
+  // BETTER_AUTH_URL would only ever be right for one of them. Fall back to the
+  // deployment URL Vercel injects, then to localhost for `vercel dev`.
+  baseURL: resolveBaseUrl(),
+  // Every preview hostname is a legitimate origin for its own deployment.
+  trustedOrigins: process.env.VERCEL_URL
+    ? [`https://${process.env.VERCEL_URL}`]
+    : [],
 
   emailAndPassword: {
     enabled: true,
