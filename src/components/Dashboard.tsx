@@ -7,8 +7,15 @@ import {
   Target,
   Wallet,
 } from "lucide-react";
-import { Session } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabase";
+import type { AppSession } from "../lib/auth-client";
+import {
+  commitWeek,
+  getBudget,
+  saveBudget,
+  savePayslip,
+  saveSnapshot,
+  uploadPayslipPdf,
+} from "../lib/api";
 import { addDays, format, startOfWeek } from "date-fns";
 import { cn } from "../lib/utils";
 import { isIncomeActive, summarizeIncome, weekStartOf } from "../lib/income";
@@ -39,7 +46,7 @@ import SettingsTab from "./tabs/SettingsTab";
 import Celebration from "./Celebration";
 
 interface DashboardProps {
-  session: Session | null;
+  session: AppSession | null;
   onLogout?: () => void;
 }
 
@@ -242,7 +249,7 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
   >("offline");
 
   // Persist locally immediately; debounce cloud writes so inline edits
-  // don't fire a Supabase write per keystroke.
+  // don't fire a request per keystroke.
   useEffect(() => {
     localStorage.setItem("budget_state_v4", JSON.stringify(state));
     if (!session?.user || !cloudReady) {
@@ -251,125 +258,64 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     }
     setSyncStatus("syncing");
     const timeout = setTimeout(() => {
-      supabase
-        .from("budgets")
-        .upsert(
-          {
-            user_id: session.user.id,
-            state,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id" },
-        )
-        .then(({ error }) => {
-          if (error) {
-            console.error("Cloud sync failed:", error.message);
-            setSyncStatus("error");
-          } else {
-            setSyncStatus("synced");
-          }
+      saveBudget(state)
+        .then(() => setSyncStatus("synced"))
+        .catch((err: Error) => {
+          console.error("Cloud sync failed:", err.message);
+          setSyncStatus("error");
         });
     }, 800);
     return () => clearTimeout(timeout);
   }, [state, session, cloudReady]);
 
-  // On first session: pull cloud state (or migrate local data up once).
-  // Then subscribe to realtime updates from other devices.
+  // On first session: pull cloud state (or migrate local data up once), then
+  // re-pull whenever the tab regains focus.
+  //
+  // Supabase Realtime pushed other devices' writes over a WebSocket. Neon has
+  // no equivalent, so sync is now pull-based: on mount, on tab focus, and on
+  // window focus. In practice the old WebSocket was suspended in background
+  // tabs anyway and relied on this same visibility refetch to recover, so
+  // single-user, multi-device use behaves the same. What is genuinely lost is
+  // live update while two devices sit open side by side.
   useEffect(() => {
     if (!session?.user) return;
-    const userId = session.user.id;
 
-    const load = async () => {
-      const { data, error } = await supabase
-        .from("budgets")
-        .select("state")
-        .eq("user_id", userId)
-        .maybeSingle();
-      if (error) {
-        // Leave cloudReady false: don't risk overwriting cloud data we
-        // couldn't read. Local-only mode still works.
-        console.error("Cloud load failed:", error.message);
-        return;
-      }
-      if (data?.state) {
-        setState((prev) =>
-          JSON.stringify(prev) !== JSON.stringify(data.state)
-            ? (data.state as BudgetState)
-            : prev,
-        );
-      }
-      // No cloud row yet: the debounced write effect above will create it
-      // from the current local state once cloudReady is set.
-      setCloudReady(true);
-    };
-    load();
+    let cancelled = false;
 
-    let channel = supabase
-      .channel("budgets-sync")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "budgets",
-          filter: `user_id=eq.${userId}`,
-        },
-        (payload) => {
-          const incoming = (payload.new as { state?: BudgetState })?.state;
-          if (!incoming) return;
+    const pull = async (initial: boolean) => {
+      try {
+        const cloudState = await getBudget();
+        if (cancelled) return;
+        if (cloudState) {
           setState((prev) =>
-            JSON.stringify(prev) !== JSON.stringify(incoming) ? incoming : prev,
+            JSON.stringify(prev) !== JSON.stringify(cloudState)
+              ? cloudState
+              : prev,
           );
-        },
-      )
-      .subscribe();
-
-    // On mobile, browsers suspend WebSockets when the tab goes to the
-    // background. Reconnect + pull fresh state when the user returns.
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== "visible") return;
-      supabase.removeChannel(channel);
-      channel = supabase
-        .channel("budgets-sync-" + Date.now())
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "budgets",
-            filter: `user_id=eq.${userId}`,
-          },
-          (payload) => {
-            const incoming = (payload.new as { state?: BudgetState })?.state;
-            if (!incoming) return;
-            setState((prev) =>
-              JSON.stringify(prev) !== JSON.stringify(incoming) ? incoming : prev,
-            );
-          },
-        )
-        .subscribe();
-      // Also re-fetch latest cloud state to catch writes made on other devices.
-      supabase
-        .from("budgets")
-        .select("state")
-        .eq("user_id", userId)
-        .maybeSingle()
-        .then(({ data }) => {
-          if (data?.state) {
-            setState((prev) =>
-              JSON.stringify(prev) !== JSON.stringify(data.state)
-                ? (data.state as BudgetState)
-                : prev,
-            );
-          }
-        });
+        }
+        // No cloud row yet: the debounced write effect above will create it
+        // from the current local state once cloudReady is set.
+        if (initial) setCloudReady(true);
+      } catch (err) {
+        // Leave cloudReady false on the initial load: don't risk overwriting
+        // cloud data we couldn't read. Local-only mode still works.
+        console.error("Cloud load failed:", (err as Error).message);
+      }
     };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    pull(true);
+
+    const onFocus = () => {
+      if (document.visibilityState === "visible") pull(false);
+    };
+
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
 
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      supabase.removeChannel(channel);
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("focus", onFocus);
     };
   }, [session]);
 
@@ -392,21 +338,14 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       "yyyy-MM-dd",
     );
     const timeout = setTimeout(() => {
-      supabase
-        .from("weekly_snapshots")
-        .upsert(
-          {
-            user_id: userId,
-            week_starting: weekStart,
-            net_income: summary.totalNetIncome,
-            total_debt_balance: snapshotDebtBalance,
-            total_paid_this_week: snapshotPaid,
-          },
-          { onConflict: "user_id,week_starting" },
-        )
-        .then(({ error }) => {
-          if (error) console.error("Snapshot write failed:", error.message);
-        });
+      saveSnapshot({
+        week_starting: weekStart,
+        net_income: summary.totalNetIncome,
+        total_debt_balance: snapshotDebtBalance,
+        total_paid_this_week: snapshotPaid,
+      }).catch((err: Error) =>
+        console.error("Snapshot write failed:", err.message),
+      );
     }, 1000);
     return () => clearTimeout(timeout);
   }, [
@@ -937,19 +876,10 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
     // Pay day is Thursday — weekly totals and payslips land here as one marker.
     const payDay = format(addDays(monday, 3), "yyyy-MM-dd");
 
-    // Commit is idempotent: clear this week's auto-committed rows first so
-    // pressing the button twice never stacks duplicates. Manually logged
-    // shifts (notes without the "[auto]" marker) are left untouched.
-    await supabase
-      .from("shift_logs")
-      .delete()
-      .eq("user_id", userId)
-      .gte("shift_date", weekStart)
-      .lte("shift_date", weekEnd)
-      .like("notes", "[auto]%");
-
+    // Commit stays idempotent: the API clears this week's auto-committed rows
+    // before inserting these, so pressing the button twice never stacks
+    // duplicates. Manually logged shifts are left untouched.
     const rows: {
-      user_id: string;
       shift_date: string;
       income_stream_id: string;
       income_stream_name: string;
@@ -967,7 +897,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
           const offset = DAY_OFFSET[sh.day];
           if (hours > 0 && rate > 0 && offset !== undefined) {
             rows.push({
-              user_id: userId,
               shift_date: format(addDays(monday, offset), "yyyy-MM-dd"),
               income_stream_id: stream.id,
               income_stream_name: stream.name,
@@ -982,7 +911,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         const hours = stream.hoursWorked ?? 0;
         if (hours > 0 && rate > 0) {
           rows.push({
-            user_id: userId,
             shift_date: payDay,
             income_stream_id: stream.id,
             income_stream_name: stream.name,
@@ -1001,7 +929,6 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       const gross = ps.grossPay || 0;
       if (gross > 0) {
         rows.push({
-          user_id: userId,
           shift_date: payDay,
           income_stream_id: ps.id,
           income_stream_name: ps.name,
@@ -1016,22 +943,18 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       }
     }
 
-    if (rows.length > 0) {
-      await supabase.from("shift_logs").insert(rows);
-    }
+    // Always call this, even with no rows: it also clears the week's previous
+    // auto-committed entries, which is what makes re-committing idempotent.
+    await commitWeek(weekStart, weekEnd, rows);
 
     // Upsert this week's snapshot (net already includes payslip actuals).
     const totalDebtBalance = state.debts.reduce((acc, d) => acc + (d.totalBalance ?? 0), 0);
-    await supabase.from("weekly_snapshots").upsert(
-      {
-        user_id: userId,
-        week_starting: weekStart,
-        net_income: summary.totalNetIncome,
-        total_debt_balance: totalDebtBalance,
-        total_paid_this_week: state.debts.reduce((acc, d) => acc + d.amount, 0),
-      },
-      { onConflict: "user_id,week_starting" },
-    );
+    await saveSnapshot({
+      week_starting: weekStart,
+      net_income: summary.totalNetIncome,
+      total_debt_balance: totalDebtBalance,
+      total_paid_this_week: state.debts.reduce((acc, d) => acc + d.amount, 0),
+    });
   };
 
   const handlePayslipArchive = async (
@@ -1049,23 +972,14 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
       fields.payPeriodStart || undefined,
     );
 
-    let storagePath: string | null = null;
-    if (file) {
-      storagePath = `${userId}/${fileName}.pdf`;
-      const { error: uploadErr } = await supabase.storage
-        .from("payslip-pdfs")
-        .upload(storagePath, file, { upsert: true, contentType: "application/pdf" });
-      if (uploadErr) {
-        console.error("Payslip PDF upload failed:", uploadErr.message);
-        storagePath = null;
-      }
-    }
+    // storage_path now holds a Vercel Blob URL rather than a bucket key. A
+    // failed upload still archives the payslip figures, just without the PDF.
+    const storagePath = file ? await uploadPayslipPdf(file, fileName) : null;
 
     const gross = Number(fields.grossPay) || null;
     const tax = Number(fields.taxWithheld) || null;
-    const { error: dbErr } = await supabase.from("payslips").upsert(
-      {
-        user_id: userId,
+    try {
+      await savePayslip({
         week_starting: weekStart,
         employer: fields.name || null,
         payment_date: fields.paymentDate || null,
@@ -1077,13 +991,10 @@ export default function Dashboard({ session, onLogout }: DashboardProps) {
         net_pay: gross != null && tax != null ? gross - tax : gross,
         file_name: fileName,
         storage_path: storagePath,
-      },
-      { onConflict: "user_id,week_starting,file_name" },
-    );
-    if (dbErr) {
-      console.error("Payslip archive insert failed:", dbErr.message);
-    } else {
+      });
       setPayslipRefreshKey((k) => k + 1);
+    } catch (err) {
+      console.error("Payslip archive insert failed:", (err as Error).message);
     }
   };
 

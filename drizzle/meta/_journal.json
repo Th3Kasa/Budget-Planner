@@ -15,6 +15,13 @@
       "when": 1786349081764,
       "tag": "0001_huge_sleeper",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786440017063,
+      "tag": "0002_careless_warbird",
+      "breakpoints": true
     }
   ]
 }

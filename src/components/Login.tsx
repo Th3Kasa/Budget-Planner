@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowRight, Eye, EyeOff, Fingerprint, LockKeyhole } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { signIn } from '../lib/auth-client';
 
 const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL || 'admin@bas-bp.vercel.app';
 
@@ -24,7 +24,7 @@ export default function Login({ onLogin }: LoginProps) {
   }, []);
 
   const doSignIn = async (email: string, pw: string): Promise<boolean> => {
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password: pw });
+    const { error: err } = await signIn.email({ email, password: pw });
     if (err) {
       setError('Incorrect password. Please try again.');
       return false;

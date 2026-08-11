@@ -1,0 +1,1 @@
+ALTER TABLE "payslips" ADD CONSTRAINT "payslips_user_week_file_key" UNIQUE("user_id","week_starting","file_name");

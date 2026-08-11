@@ -156,5 +156,15 @@ export const payslips = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (t) => [index("payslips_user_week_idx").on(t.userId, t.weekStarting)],
+  (t) => [
+    index("payslips_user_week_idx").on(t.userId, t.weekStarting),
+    // The app upserts payslips on this triple. Supabase had no matching
+    // constraint, so that upsert could not resolve a conflict target; it is
+    // declared properly here.
+    unique("payslips_user_week_file_key").on(
+      t.userId,
+      t.weekStarting,
+      t.fileName,
+    ),
+  ],
 );

@@ -32,8 +32,16 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Session } from "@supabase/supabase-js";
-import { supabase } from "../../lib/supabase";
+import type { AppSession } from "../../lib/auth-client";
+import {
+  createShiftLog,
+  deletePayslip,
+  deleteShiftLog,
+  downloadPayslipPdf,
+  getPayslips,
+  getShiftLogs,
+  getSnapshots,
+} from "../../lib/api";
 import {
   BudgetElement,
   IncomeStream,
@@ -66,7 +74,7 @@ interface HistoryTabProps {
   incomes: IncomeStream[];
   expenses: BudgetElement[];
   netWorthHistory: NetWorthPoint[];
-  session: Session | null;
+  session: AppSession | null;
   payslipRefreshKey?: number;
 }
 
@@ -115,39 +123,25 @@ export default function HistoryTab({
     if (stream?.hourlyRate) setLogRate(String(stream.hourlyRate));
   }, [logStreamId, incomes]);
 
-  // Load shift logs and weekly snapshots from Supabase.
+  // Load shift logs, weekly snapshots and payslips. Ordering is applied
+  // server-side, matching what the Supabase queries asked for.
   useEffect(() => {
     if (!session?.user) return;
-    const userId = session.user.id;
     let alive = true;
-    Promise.all([
-      supabase
-        .from("shift_logs")
-        .select("*")
-        .eq("user_id", userId)
-        .order("shift_date", { ascending: false }),
-      supabase
-        .from("weekly_snapshots")
-        .select("*")
-        .eq("user_id", userId)
-        .order("week_starting", { ascending: true }),
-      supabase
-        .from("payslips")
-        .select("*")
-        .eq("user_id", userId)
-        .order("week_starting", { ascending: false }),
-    ]).then(([logsRes, snapsRes, psRes]) => {
-      if (!alive) return;
-      if (logsRes.error)
-        console.error("Shift log load failed:", logsRes.error.message);
-      else if (logsRes.data) setShiftLogs(logsRes.data as ShiftLog[]);
-      if (snapsRes.error)
-        console.error("Snapshot load failed:", snapsRes.error.message);
-      else if (snapsRes.data) setSnapshots(snapsRes.data as WeeklySnapshot[]);
-      if (psRes.error)
-        console.error("Payslip archive load failed:", psRes.error.message);
-      else if (psRes.data) setPayslips(psRes.data as PayslipRecord[]);
-    });
+
+    Promise.allSettled([getShiftLogs(), getSnapshots(), getPayslips()]).then(
+      ([logsRes, snapsRes, psRes]) => {
+        if (!alive) return;
+        if (logsRes.status === "fulfilled") setShiftLogs(logsRes.value);
+        else console.error("Shift log load failed:", logsRes.reason?.message);
+        if (snapsRes.status === "fulfilled") setSnapshots(snapsRes.value);
+        else console.error("Snapshot load failed:", snapsRes.reason?.message);
+        if (psRes.status === "fulfilled") setPayslips(psRes.value);
+        else
+          console.error("Payslip archive load failed:", psRes.reason?.message);
+      },
+    );
+
     return () => {
       alive = false;
     };
@@ -161,57 +155,53 @@ export default function HistoryTab({
     setIsSavingLog(true);
 
     const stream = incomes.find((i) => i.id === logStreamId);
-    const { data, error } = await supabase
-      .from("shift_logs")
-      .insert({
-        user_id: session.user.id,
+    try {
+      const log = await createShiftLog({
         shift_date: selectedDate,
         income_stream_id: logStreamId,
         income_stream_name: stream?.name ?? "Shift",
         hours: Number(logHours),
         hourly_rate: Number(logRate),
         notes: logNotes || null,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Failed to save shift:", error.message);
-    } else if (data) {
-      setShiftLogs((prev) => [data as ShiftLog, ...prev]);
+      });
+      setShiftLogs((prev) => [log, ...prev]);
       setLogHours("");
       setLogNotes("");
       setShowLogForm(false);
+    } catch (err) {
+      console.error("Failed to save shift:", (err as Error).message);
     }
     setIsSavingLog(false);
   };
 
   const handleDeleteShift = async (id: string) => {
-    const { error } = await supabase.from("shift_logs").delete().eq("id", id);
-    if (!error) setShiftLogs((prev) => prev.filter((l) => l.id !== id));
-  };
-
-  const handleDeletePayslip = async (id: string, storagePath: string | null) => {
-    const { error } = await supabase.from("payslips").delete().eq("id", id);
-    if (error) { console.error("Delete payslip failed:", error.message); return; }
-    setPayslips((prev) => prev.filter((p) => p.id !== id));
-    if (storagePath) {
-      await supabase.storage.from("payslip-pdfs").remove([storagePath]);
+    try {
+      await deleteShiftLog(id);
+      setShiftLogs((prev) => prev.filter((l) => l.id !== id));
+    } catch (err) {
+      console.error("Delete shift failed:", (err as Error).message);
     }
   };
 
-  const handleDownloadPayslip = async (storagePath: string, fileName: string) => {
-    const { data, error } = await supabase.storage
-      .from("payslip-pdfs")
-      .createSignedUrl(storagePath, 3600);
-    if (error || !data?.signedUrl) {
-      console.error("Could not generate download URL:", error?.message);
-      return;
+  // The stored PDF is removed by the API alongside the record, so there is no
+  // second call to make here.
+  const handleDeletePayslip = async (id: string) => {
+    try {
+      await deletePayslip(id);
+      setPayslips((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      console.error("Delete payslip failed:", (err as Error).message);
     }
-    const a = document.createElement("a");
-    a.href = data.signedUrl;
-    a.download = `${fileName}.pdf`;
-    a.click();
+  };
+
+  // Downloads stream through the API, which checks ownership first, so the
+  // blob's storage URL is never exposed to the browser.
+  const handleDownloadPayslip = async (id: string, fileName: string) => {
+    try {
+      await downloadPayslipPdf(id, fileName);
+    } catch (err) {
+      console.error("Payslip download failed:", (err as Error).message);
+    }
   };
 
   const daysWithLogs = new Set(shiftLogs.map((l) => l.shift_date));
@@ -713,7 +703,7 @@ export default function HistoryTab({
                     {p.storage_path && (
                       <button
                         onClick={() =>
-                          handleDownloadPayslip(p.storage_path!, p.file_name)
+                          handleDownloadPayslip(p.id, p.file_name)
                         }
                         className="flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-50 px-2.5 py-1.5 rounded-lg hover:bg-indigo-100 transition"
                         title="Download PDF"
@@ -724,7 +714,7 @@ export default function HistoryTab({
                     )}
                     <button
                       onClick={() =>
-                        handleDeletePayslip(p.id, p.storage_path ?? null)
+                        handleDeletePayslip(p.id)
                       }
                       className="p-1.5 text-gray-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition"
                       aria-label="Delete payslip"

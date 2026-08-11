@@ -64,13 +64,15 @@ type Backup = {
 
 const backup: Backup = JSON.parse(readFileSync(resolve(filePath), "utf8"));
 
+type Row = Record<string, unknown> & { user_id: string };
+
 const mine = <T extends { user_id: string }>(rows: T[]) =>
   rows.filter((r) => r.user_id === legacyUserId);
 
 const budgetRow = mine(backup.budgets)[0];
-const logs = mine(backup.shift_logs as { user_id: string }[]);
-const snaps = mine(backup.weekly_snapshots as { user_id: string }[]);
-const slips = mine(backup.payslips as { user_id: string }[]);
+const logs = mine(backup.shift_logs as Row[]);
+const snaps = mine(backup.weekly_snapshots as Row[]);
+const slips = mine(backup.payslips as Row[]);
 
 if (!budgetRow && !logs.length && !snaps.length && !slips.length) {
   console.error(
@@ -194,14 +196,20 @@ if (orphanedPdfs) {
 
 /* ------------------------------------------------------------------ verify */
 
-const counts = await db.execute(sql`
+const counts = (await db.execute(sql`
   SELECT 'budgets' t, count(*) n FROM budgets WHERE user_id = ${target.id}
   UNION ALL SELECT 'shift_logs', count(*) FROM shift_logs WHERE user_id = ${target.id}
   UNION ALL SELECT 'weekly_snapshots', count(*) FROM weekly_snapshots WHERE user_id = ${target.id}
   UNION ALL SELECT 'payslips', count(*) FROM payslips WHERE user_id = ${target.id}
-`);
+`)) as unknown;
+
+// The neon-http driver returns the rows array directly; other drivers wrap it
+// in { rows }. Handle both so this keeps working if the driver is swapped.
+const rows = (
+  Array.isArray(counts) ? counts : ((counts as { rows?: unknown[] }).rows ?? [])
+) as { t: string; n: number }[];
 
 console.log("\nRows now owned by this account:");
-for (const row of counts.rows ?? counts) {
-  console.log(`  ${(row as any).t}: ${(row as any).n}`);
+for (const row of rows) {
+  console.log(`  ${row.t}: ${row.n}`);
 }
